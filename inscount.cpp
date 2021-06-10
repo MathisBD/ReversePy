@@ -1,8 +1,13 @@
-#include "pin.h"
+#include "pin.H"
 #include <stdint.h>
-#include <stdio.h>
+#include <iostream>
+#include <fstream>
 
-uint32_t count = 0;
+std::ofstream outFile;
+KNOB< std::string > KnobOutputFile(KNOB_MODE_WRITEONCE, "pintool", "o", "inscount.out", "specify file output name");
+
+
+static uint64_t count = 0;
 
 void on_instruction()
 {
@@ -14,14 +19,19 @@ void Instruction(INS ins, void* v)
     INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)on_instruction, IARG_END);
 }
 
-void Fini(INT32 code, void* v)
+void Fini(int32_t code, void* v)
 {
-    std::cerr << "cout" << icount << std::endl;
+    outFile.setf(std::ios::showbase);
+    outFile << "Count=" << count << std::endl;
+    outFile.close();
 }
 
 int main(int argc, char* argv[])
 {
     PIN_Init(argc, argv);
+    
+    outFile.open(KnobOutputFile.Value().c_str());
+    
     INS_AddInstrumentFunction(Instruction, 0);
     PIN_AddFiniFunction(Fini, 0);
     PIN_StartProgram();
