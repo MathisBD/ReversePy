@@ -1,0 +1,36 @@
+Loading /usr/bin/python3.8, ID is 1
+	region 400000 -> 422967
+	region 423000 -> 6b5aa4
+	region 6b6000 -> 8f1ef7
+	region 8f3db0 -> 95dc27
+Loading /lib64/ld-linux-x86-64.so.2, ID is 2
+	region 7fa995784000 -> 7fa995784fc7
+	region 7fa995785000 -> 7fa9957a7673
+	region 7fa9957a8000 -> 7fa9957afccb
+	region 7fa9957b1520 -> 7fa9957b318f
+Loading [vdso], ID is 3
+	region 7fff8aad6000 -> 7fff8aad6ec7
+Loading /lib/x86_64-linux-gnu/libc.so.6, ID is 4
+	region 7fa97fd6d000 -> 7fa97ff5e4d7
+Loading /lib/x86_64-linux-gnu/libpthread.so.0, ID is 5
+	region 7fa97fd0f000 -> 7fa97fd31477
+Loading /lib/x86_64-linux-gnu/libdl.so.2, ID is 6
+	region 7fa97fd35000 -> 7fa97fd3a10f
+Loading /lib/x86_64-linux-gnu/libutil.so.1, ID is 7
+	region 7fa97fd0a000 -> 7fa97fd0e10f
+Loading /lib/x86_64-linux-gnu/libm.so.6, ID is 8
+	region 7fa97fbbb000 -> 7fa97fd0910f
+Loading /lib/x86_64-linux-gnu/libexpat.so.1, ID is 9
+	region 7fa97fb8d000 -> 7fa97fbba09f
+Loading /lib/x86_64-linux-gnu/libz.so.1, ID is 10
+	region 7fa97fb71000 -> 7fa97fb8c0b7
+Unloading /usr/bin/python3.8
+Unloading /lib64/ld-linux-x86-64.so.2
+Unloading [vdso]
+Unloading /lib/x86_64-linux-gnu/libc.so.6
+Unloading /lib/x86_64-linux-gnu/libpthread.so.0
+Unloading /lib/x86_64-linux-gnu/libdl.so.2
+Unloading /lib/x86_64-linux-gnu/libutil.so.1
+Unloading /lib/x86_64-linux-gnu/libm.so.6
+Unloading /lib/x86_64-linux-gnu/libexpat.so.1
+Unloading /lib/x86_64-linux-gnu/libz.so.1

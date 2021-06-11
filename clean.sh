@@ -3,3 +3,5 @@
 
 rm -f ./*.out
 rm -f -r ./obj-intel64
+rm -f -r $OUTPUT_DIR
+rm -f ./pintool.log

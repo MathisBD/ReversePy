@@ -1,4 +1,5 @@
 #!/bin/sh
 . ./config.sh
 
-make PIN_ROOT=$PIN_ROOT obj-intel64/inscount.so
+mkdir -p obj-intel64/src 
+make PIN_ROOT=$PIN_ROOT obj-intel64/src/tool.so
