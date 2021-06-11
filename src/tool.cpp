@@ -19,7 +19,8 @@ typedef struct {
 typedef struct {
     std::string disassembly;
     uint32_t exec_count;
-    uint32_t size;
+    uint32_t size;  // instruction size in bytes
+    uint64_t callAddr; // 0 for non call instructions
 } instruction_t;
 
 // the interpreted program (not the instrumented program)
@@ -32,7 +33,7 @@ static FILE* codeDumpFile;
 static FILE* imgFile;
 
 static uint32_t mainImgId;   // image id of the main executable
-static bool openedProg = true; // did we open the interpreted program yet ?
+static bool openedProg = false; // did we open the interpreted program yet ?
 
 // maps address -> instruction
 static std::map<uint64_t, instruction_t*> mainCode;
@@ -157,20 +158,24 @@ void increaseExecCount(instruction_t* instr)
 
 void Instruction(INS ins, void* v)
 {
-    uint32_t imgId = addrImgId(INS_Address(ins));
+    //uint32_t imgId = addrImgId(INS_Address(ins));
 
     if (openedProg) {
-        if (imgId == mainImgId) {
+        //if (imgId == mainImgId) {
             instruction_t* instr = (instruction_t*)malloc(sizeof(instruction_t));
             instr->disassembly = std::string(INS_Disassemble(ins));
             instr->exec_count = 0;
             instr->size = INS_Size(ins);
+            instr->callAddr = 
+                INS_IsDirectControlFlow(ins) && INS_IsDirectCall(ins) ? 
+                INS_DirectControlFlowTargetAddress(ins) : 
+                0;
             mainCode.insert(std::make_pair((uint64_t)INS_Address(ins), instr));
             
             INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)increaseExecCount,
                 IARG_PTR, instr, 
                 IARG_END);
-        }
+        //}
     }
     
     /*INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)process_ins,
@@ -216,7 +221,7 @@ void ImageUnload(IMG img, void* v)
 
 void Fini(int32_t code, void* v)
 {
-    uint32_t freqThreshold = 5000;
+    uint32_t freqThreshold = 0;
 
     uint32_t instrCount = 0;
     uint32_t frequentInstrCount = 0;
@@ -230,7 +235,13 @@ void Fini(int32_t code, void* v)
             if (nextAddr != 0 && addr != nextAddr) {
                 fprintf(codeDumpFile, "...\n");
             }
-            fprintf(codeDumpFile, "0x%lx\t[%u]\t%s\n", addr, instr->exec_count, instr->disassembly.c_str());
+            fprintf(codeDumpFile, "0x%lx\t[%u]\t%s", addr, instr->exec_count, instr->disassembly.c_str());
+            if (instr->callAddr != 0) {
+                //uint32_t callImgId = addrImgId(instr->callAddr);
+                fprintf(codeDumpFile, " (image id=0x%lx)", instr->callAddr);
+            }
+            fprintf(codeDumpFile, "\n");
+
             nextAddr = addr + instr->size;
         }
 
