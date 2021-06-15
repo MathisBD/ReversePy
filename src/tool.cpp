@@ -30,6 +30,7 @@ static FILE* syscallFile;
 static FILE* metricsFile;
 static FILE* codeDumpFile;
 static FILE* imgFile;
+static FILE* graphFile;
 FILE* errorFile; // this is not static : other source files might need to write here
 
 static uint32_t mainImgId;   // image id of the main executable
@@ -155,7 +156,7 @@ void syscallExit(THREADID tid, CONTEXT* ctx, SYSCALL_STANDARD sysStd, VOID* v)
 
 void insExecuted(Instruction* instr, ADDRINT addr)
 {
-    instr->exec_count++;
+    (instr->exec_count)++;
     jumps.insert(std::make_pair(prevAddr, (uint64_t)addr));
     prevAddr = (uint64_t)addr;
 }
@@ -227,6 +228,8 @@ void Fini(int32_t code, void* v)
     uint32_t instrCount = 0;
     uint32_t bbCount = 0; 
 
+    //cfg.pruneDeadCode();
+
     std::vector<BasicBlock*> bbls = cfg.getBasicBlocks();
     for (BasicBlock* bb : bbls) {
         bbCount++;
@@ -237,6 +240,7 @@ void Fini(int32_t code, void* v)
         fprintf(codeDumpFile, "\n");
     }
 
+    cfg.writeDotGraph(graphFile);
 
     fprintf(metricsFile, "Main Image Distinct Instructions : %u\n", instrCount);
     fprintf(metricsFile, "Main Image Basic Block Count : %u\n", bbCount);
@@ -247,6 +251,7 @@ void Fini(int32_t code, void* v)
     fclose(codeDumpFile);
     fclose(imgFile);
     fclose(errorFile);
+    fclose(graphFile);
 }
 
 int main(int argc, char* argv[])
@@ -264,6 +269,7 @@ int main(int argc, char* argv[])
     metricsFile = fopen((outputFolder + "metrics").c_str(), "w");
     codeDumpFile = fopen((outputFolder + "code_dump").c_str(), "w");
     errorFile = fopen((outputFolder + "errors").c_str(), "w");
+    graphFile = fopen((outputFolder + "cfg.dot").c_str(), "w");
 
     //////////////////////////////////////////////
 
@@ -275,13 +281,14 @@ int main(int argc, char* argv[])
     jumps.insert(std::make_pair(22, 10));
     jumps.insert(std::make_pair(10, 12));
     cfg->splitWithJumps(jumps);
-    cfg->printBasicBlocks(codeDumpFile);
+    cfg->writeDotGraph(graphFile);
     
     fclose(syscallFile);
     fclose(metricsFile);
     fclose(codeDumpFile);
     fclose(imgFile);
     fclose(errorFile);
+    fclose(graphFile);
     return 0;*/
     /////////////////////////////////////////////
 

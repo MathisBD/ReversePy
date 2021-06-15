@@ -29,18 +29,66 @@ BasicBlock::BasicBlock(Instruction* firstInstr)
 {
     instrs.push_back(firstInstr);
     lastInstrAddr = firstInstr->addr;
+    id = 0;
 }
 
 
 CFG::CFG()
 {
+    nextBbId = 0;
 }
 
 void CFG::addInstruction(Instruction* instr)
 {
     // create a trivial basic block containing only this instruction
     BasicBlock* bb = new BasicBlock(instr);
+    bb->id = nextBbId++;
     bbByFirstAddr.insert(std::make_pair(instr->addr, bb));
+}
+
+void CFG::pruneDFS(BasicBlock* bb)
+{
+    bb->dfsState = DFS_VISITED;
+
+    for (auto it = bb->nextBlocks.begin(); it != bb->nextBlocks.end(); ) {
+        if ((*it)->instrs[0]->exec_count == 0) {
+            bb->nextBlocks.erase(it++);
+        }
+        else {
+            it++;
+        }
+    }
+    for (BasicBlock* nextBb : bb->nextBlocks) {
+        if (nextBb->dfsState == DFS_UNVISITED) {
+            pruneDFS(nextBb);
+        }
+    }
+}
+
+void CFG::pruneDeadCode()
+{
+    // remove all instructions we didn't execute
+    for (auto it = bbByFirstAddr.begin(); it != bbByFirstAddr.end(); ) {
+        BasicBlock* bb = it->second;
+        if (bb->instrs[0]->exec_count == 0) {
+            bbByFirstAddr.erase(it++);
+        }
+        else {
+            it++;
+        }
+    }
+    // set all nodes to unvisited
+    for (auto it = bbByFirstAddr.begin(); it != bbByFirstAddr.end(); it++) {
+        BasicBlock* bb = it->second;
+        bb->dfsState = DFS_UNVISITED;
+    }
+    // visit every node
+    for (auto it = bbByFirstAddr.begin(); it != bbByFirstAddr.end(); it++) {
+        BasicBlock* bb = it->second;
+        if (bb->dfsState == DFS_UNVISITED) {
+            pruneDFS(bb);
+        }
+    }
 }
 
 void CFG::mergeBlockFront(BasicBlock* bb)
@@ -68,7 +116,7 @@ void CFG::mergeBlockFront(BasicBlock* bb)
         // get the next block
         auto nextBbIt = bbByFirstAddr.find(nextAddr);
         if (nextBbIt == bbByFirstAddr.end()) {
-            panic("[merge] didn't find block starting at address 0x%lx\n", nextAddr);
+            
         }
         BasicBlock* nextBb = nextBbIt->second;
 
@@ -110,14 +158,6 @@ void CFG::splitDFS(BasicBlock* bb)
     }
 }
 
-/*static void printAddrVect(const std::vector<uint64_t> vect)
-{   
-    printf("( ");
-    for (uint64_t addr : vect) {
-        printf("0x%lx ", addr);
-    }
-    printf(")");
-}*/
 
 void CFG::splitWithJumps(const std::set<std::pair<uint64_t, uint64_t>>& jumps)
 {
@@ -149,24 +189,12 @@ void CFG::splitWithJumps(const std::set<std::pair<uint64_t, uint64_t>>& jumps)
             toIt->second.push_back(fromAddr);
         }
     }
-
-    /*auto it = jumpsFromAddr.find(10);
-    if (it != jumpsFromAddr.end()) {
-        printf("0x%lx -> ", 10UL);
-        printAddrVect(it->second);
-        printf("\n");
-    }
-
-    it = jumpsToAddr.find(12);
-    if (it != jumpsToAddr.end()) {
-        printAddrVect(it->second);
-        printf(" -> 0x%lx\n", 12UL);
-    }*/
-
+    // set all nodes to unvisited
     for (auto it = bbByFirstAddr.begin(); it != bbByFirstAddr.end(); it++) {
         BasicBlock* bb = it->second;
         bb->dfsState = DFS_UNVISITED;
     }
+    // visit every node
     for (auto it = bbByFirstAddr.begin(); it != bbByFirstAddr.end(); it++) {
         BasicBlock* bb = it->second;
         if (bb->dfsState == DFS_UNVISITED) {
@@ -182,4 +210,48 @@ std::vector<BasicBlock*> CFG::getBasicBlocks()
         bbls.push_back(it->second);
     }
     return bbls;
+}
+
+
+void CFG::dotDFS(FILE* file, BasicBlock* bb)
+{
+    bb->dfsState = DFS_VISITED;
+
+    if (bb->instrs[0]->exec_count > 0) {
+        fprintf(file, "\t%u [ label=\"", bb->id);
+        for (auto instr : bb->instrs) {
+            fprintf(file, "[%u] %s\\n", 
+                instr->exec_count, instr->disassembly.c_str());
+        }
+        fprintf(file, "\"]\n");
+    }
+
+    for (auto nextBb : bb->nextBlocks) {
+        if (bb->instrs[0]->exec_count > 0 && nextBb->instrs[0]->exec_count > 0) {
+            fprintf(file, "\t%u -> %u\n", bb->id, nextBb->id);
+        }
+        if (nextBb->dfsState == DFS_UNVISITED) {
+            dotDFS(file, nextBb);
+        }
+    }
+}
+
+void CFG::writeDotGraph(FILE* file)
+{
+    for (auto it = bbByFirstAddr.begin(); it != bbByFirstAddr.end(); it++) {
+        BasicBlock* bb = it->second;
+        bb->dfsState = DFS_UNVISITED;
+    }
+
+    fprintf(file, "digraph {\n");
+    fprintf(file, "\tnode [ shape=box ]\n");
+
+    for (auto it = bbByFirstAddr.begin(); it != bbByFirstAddr.end(); it++) {
+        BasicBlock* bb = it->second;
+        if (bb->dfsState == DFS_UNVISITED) {
+            dotDFS(file, bb);
+        }
+    }
+
+    fprintf(file, "}\n");
 }
