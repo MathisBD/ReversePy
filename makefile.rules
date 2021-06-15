@@ -80,7 +80,8 @@ SANITY_SUBSET := $(TEST_TOOL_ROOTS) $(TEST_ROOTS)
 # See makefile.default.rules for the default build rules.
 
 SRC=cfg.cpp \
-tool.cpp
+tool.cpp \
+panic.cpp
 
 $(OBJDIR)%$(OBJ_SUFFIX): src/%.cpp
 	$(CXX) $(TOOL_CXXFLAGS) -Iinclude -MD $(COMP_OBJ)$@ $<

@@ -6,9 +6,10 @@
 #include <utility>
 #include <map>
 #include <sys/stat.h>
-#include <unordered_set>
+#include <set>
 
 #include "cfg.h"
+#include "panic.h"
 #include "pin.H"
 
 class ImgRegion
@@ -29,12 +30,15 @@ static FILE* syscallFile;
 static FILE* metricsFile;
 static FILE* codeDumpFile;
 static FILE* imgFile;
+FILE* errorFile; // this is not static : other source files might need to write here
 
 static uint32_t mainImgId;   // image id of the main executable
-static bool openedProg = false; // did we open the interpreted program yet ?
+static bool openedProg = true; // did we open the interpreted program yet ?
 static bool foundFloatIns = false;
 
 static CFG cfg;
+static std::set<std::pair<uint64_t, uint64_t>> jumps;
+static uint64_t prevAddr;
 
 // memory regions that contain a program image
 static std::vector<ImgRegion*> imgRegions;
@@ -149,30 +153,30 @@ void syscallExit(THREADID tid, CONTEXT* ctx, SYSCALL_STANDARD sysStd, VOID* v)
     process_syscall_ret(PIN_GetSyscallReturn(ctx, sysStd));
 }*/
 
-void increaseExecCount(Instruction* instr)
+void insExecuted(Instruction* instr, ADDRINT addr)
 {
     instr->exec_count++;
+    jumps.insert(std::make_pair(prevAddr, (uint64_t)addr));
+    prevAddr = (uint64_t)addr;
 }
 
-void Instruction(INS ins, void* v)
+void InstrumentIns(INS ins, void* v)
 {
     if (INS_IsNop(ins)) {
         return;
     }
     uint32_t imgId = findImgId(INS_Address(ins));
-
-    if (openedProg) {
-        if (imgId == mainImgId) {
-            if (INS_Opcode(ins) == XED_ICLASS_DIVSD) {
-                foundFloatIns = true;
-            }
-            Instruction* instr = cfg.addInstruction(ins);
-            instr->afterFloatIns = foundFloatIns;
-
-            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)increaseExecCount,
-                IARG_PTR, instr, 
-                IARG_END);
+    if (openedProg && imgId == mainImgId) {
+        if (INS_Opcode(ins) == XED_ICLASS_DIVSD) {
+            foundFloatIns = true;
         }
+        Instruction* instr = cfg.addInstruction(ins);
+        instr->afterFloatIns = foundFloatIns;
+
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)insExecuted,
+            IARG_PTR, instr, 
+            IARG_ADDRINT, INS_Address(ins),
+            IARG_END);
     }
 
     if (INS_IsSyscall(ins)) {
@@ -212,42 +216,15 @@ void ImageUnload(IMG img, void* v)
 
 void Fini(int32_t code, void* v)
 {
-    uint32_t freqThreshold = 1;
+    //uint32_t freqThreshold = 1;
 
+    cfg.splitWithJumps(jumps);
+    cfg.printBasicBlocks(codeDumpFile);
+    
     uint32_t instrCount = 0;
     uint32_t frequentInstrCount = 0;
     uint32_t afterFloatInstrCount = 0;
-    
-    for (auto it = cfg.bbByFirstAddr.begin(); it != cfg.bbByFirstAddr.end(); it++) {
-        BasicBlock* bb = it->second;
-        for (Instruction instr : bb->instrs) {
-            
-        }
-    }
 
-
-    /*uint64_t nextAddr = 0; // address of the instruction following the last one we printed.
-    for (auto it = mainCode.begin(); it != mainCode.end(); it++) {
-        uint64_t addr = it->first;
-        instruction_t* instr = it->second;
-
-        if (instr->exec_count >= freqThreshold && instr->afterFloatIns) {
-            if (nextAddr != 0 && addr != nextAddr) {
-                fprintf(codeDumpFile, "...\n");
-            }
-            else {
-                afterFloatInstrCount++;
-            }
-            fprintf(codeDumpFile, "0x%lx\t[%u]\t%s\n", addr, instr->exec_count, instr->disassembly.c_str());
-
-            nextAddr = addr + instr->size;
-        }
-
-        instrCount++;
-        if (instr->exec_count >= freqThreshold) {
-            frequentInstrCount++;
-        }
-    }*/
     fprintf(metricsFile, "Main Image Distinct Instructions : %u\n", instrCount);
     fprintf(metricsFile, "Main Image Frequent Instructions : %u\n", frequentInstrCount);
     fprintf(metricsFile, "Main Image Frequent + After Float Instructions : %u\n", afterFloatInstrCount);
@@ -257,6 +234,7 @@ void Fini(int32_t code, void* v)
     fclose(metricsFile);
     fclose(codeDumpFile);
     fclose(imgFile);
+    fclose(errorFile);
 }
 
 int main(int argc, char* argv[])
@@ -264,9 +242,6 @@ int main(int argc, char* argv[])
     PIN_InitSymbols();
     PIN_Init(argc, argv);
     PIN_SetSyntaxATT();
-
-    int x = 3;
-    printf("x squared is : %d\n", square(x));
 
     std::string outputFolder = outputFolderKnob.Value().c_str();
     if (outputFolder[outputFolder.size() - 1] != '/') {
@@ -276,8 +251,9 @@ int main(int argc, char* argv[])
     syscallFile = fopen((outputFolder + "syscalls").c_str(), "w");
     metricsFile = fopen((outputFolder + "metrics").c_str(), "w");
     codeDumpFile = fopen((outputFolder + "code_dump").c_str(), "w");
+    errorFile = fopen((outputFolder + "errors").c_str(), "w");
 
-    INS_AddInstrumentFunction(Instruction, 0);
+    INS_AddInstrumentFunction(InstrumentIns, 0);
     //PIN_AddSyscallExitFunction(syscallExit, 0);
     IMG_AddInstrumentFunction(ImageLoad, 0);
     IMG_AddUnloadFunction(ImageUnload, 0);

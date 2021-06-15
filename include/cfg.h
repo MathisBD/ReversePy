@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <vector>
 #include <map>
+#include <set>
 
 #include "pin.H"
 
@@ -10,7 +11,7 @@
 class Instruction
 {
 public:
-    uint64_t address; // each instruction has a different, unique address
+    uint64_t addr; // each instruction has a different, unique address
     uint32_t exec_count; // number of times this instruction was executed
     uint32_t size;  // instruction size in bytes
     
@@ -29,20 +30,21 @@ public:
     bool visited; // used by the CFG to do a DFS
 
     BasicBlock(Instruction* firstInstr);
-}
+};
 
-class CFG:
+class CFG
 {
 public:
     CFG();
     Instruction* addInstruction(INS ins);
     // compute basic blocks according to the following jumps.
-    void splitWithJumps(const std::unordered_set<std::pair<uint64_t, uint64_t>>& jumps);
+    void splitWithJumps(const std::set<std::pair<uint64_t, uint64_t>>& jumps);
+    void printBasicBlocks(FILE* file);
 private:
-    std::unordered_map<uint64_t, BasicBlock*> bbByFirstAddr;
-    std::unordered_map<uint64_t, std::vector<uint64_t>> jumpsFromAddr;
-    std::unordered_map<uint64_t, std::vector<uint64_t>> jumpsToAddr;
+    std::map<uint64_t, BasicBlock*> bbByFirstAddr;
+    std::map<uint64_t, std::vector<uint64_t>> jumpsFromAddr;
+    std::map<uint64_t, std::vector<uint64_t>> jumpsToAddr;
 
-    mergeBlockFront(BasicBlock* bb);
-    splitDFS(BasicBlock* bb);
+    void mergeBlockFront(BasicBlock* bb);
+    void splitDFS(BasicBlock* bb);
 };

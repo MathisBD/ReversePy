@@ -1,36 +1,27 @@
-Loading /usr/bin/python3.8, ID is 1
-	region 400000 -> 422967
-	region 423000 -> 6b5aa4
-	region 6b6000 -> 8f1ef7
-	region 8f3db0 -> 95dc27
+Loading /usr/bin/ls, ID is 1
+	region 56260ccb1000 -> 56260ccb46a7
+	region 56260ccb5000 -> 56260ccc8580
+	region 56260ccc9000 -> 56260ccd1b4f
+	region 56260ccd3010 -> 56260ccd5557
 Loading /lib64/ld-linux-x86-64.so.2, ID is 2
-	region 7fee14acb000 -> 7fee14acbfc7
-	region 7fee14acc000 -> 7fee14aee673
-	region 7fee14aef000 -> 7fee14af6ccb
-	region 7fee14af8520 -> 7fee14afa18f
+	region 7f740f3af000 -> 7f740f3affc7
+	region 7f740f3b0000 -> 7f740f3d2673
+	region 7f740f3d3000 -> 7f740f3daccb
+	region 7f740f3dc520 -> 7f740f3de18f
 Loading [vdso], ID is 3
-	region 7ffd11d31000 -> 7ffd11d31ec7
-Loading /lib/x86_64-linux-gnu/libc.so.6, ID is 4
-	region 7fedff0ba000 -> 7fedff2ab4d7
-Loading /lib/x86_64-linux-gnu/libpthread.so.0, ID is 5
-	region 7fedff061000 -> 7fedff083477
-Loading /lib/x86_64-linux-gnu/libdl.so.2, ID is 6
-	region 7fedff05b000 -> 7fedff06010f
-Loading /lib/x86_64-linux-gnu/libutil.so.1, ID is 7
-	region 7fedff056000 -> 7fedff05a10f
-Loading /lib/x86_64-linux-gnu/libm.so.6, ID is 8
-	region 7fedfef07000 -> 7fedff05510f
-Loading /lib/x86_64-linux-gnu/libexpat.so.1, ID is 9
-	region 7fedfeed9000 -> 7fedfef0609f
-Loading /lib/x86_64-linux-gnu/libz.so.1, ID is 10
-	region 7fedfeebb000 -> 7fedfeed60b7
-Unloading /usr/bin/python3.8
+	region 7ffcf13b9000 -> 7ffcf13b9ec7
+Loading /lib/x86_64-linux-gnu/libselinux.so.1, ID is 4
+	region 7f73fab33000 -> 7f73fab5da07
+Loading /lib/x86_64-linux-gnu/libc.so.6, ID is 5
+	region 7f73fa8fe000 -> 7f73faaef4d7
+Loading /lib/x86_64-linux-gnu/libpcre2-8.so.0, ID is 6
+	region 7f73fa86e000 -> 7f73fa8fd327
+Loading /lib/x86_64-linux-gnu/libdl.so.2, ID is 7
+	region 7f73faaf4000 -> 7f73faaf910f
+Loading /lib/x86_64-linux-gnu/libpthread.so.0, ID is 8
+	region 7f73fa840000 -> 7f73fa862477
+Unloading /usr/bin/ls
 Unloading /lib64/ld-linux-x86-64.so.2
 Unloading [vdso]
-Unloading /lib/x86_64-linux-gnu/libc.so.6
-Unloading /lib/x86_64-linux-gnu/libpthread.so.0
-Unloading /lib/x86_64-linux-gnu/libdl.so.2
-Unloading /lib/x86_64-linux-gnu/libutil.so.1
-Unloading /lib/x86_64-linux-gnu/libm.so.6
-Unloading /lib/x86_64-linux-gnu/libexpat.so.1
-Unloading /lib/x86_64-linux-gnu/libz.so.1
+Unloading /lib/x86_64-linux-gnu/libselinux.so.1
+Unloading /lib/x86_
