@@ -19,15 +19,16 @@ public:
     bool afterFloatIns;
     
     Instruction();
+    Instruction(uint64_t addr, const std::string& dis);
 };
 
 class BasicBlock
 {
 public:
-    std::map<uint64_t, Instruction*> instrs;
+    std::vector<Instruction*> instrs;
     std::vector<BasicBlock*> nextBlocks;
     uint64_t lastInstrAddr;
-    bool visited; // used by the CFG to do a DFS
+    uint8_t dfsState; // used by the CFG to do a DFS
 
     BasicBlock(Instruction* firstInstr);
 };
@@ -36,10 +37,10 @@ class CFG
 {
 public:
     CFG();
-    Instruction* addInstruction(INS ins);
+    void addInstruction(Instruction* instr);
     // compute basic blocks according to the following jumps.
     void splitWithJumps(const std::set<std::pair<uint64_t, uint64_t>>& jumps);
-    void printBasicBlocks(FILE* file);
+    std::vector<BasicBlock*> getBasicBlocks();
 private:
     std::map<uint64_t, BasicBlock*> bbByFirstAddr;
     std::map<uint64_t, std::vector<uint64_t>> jumpsFromAddr;

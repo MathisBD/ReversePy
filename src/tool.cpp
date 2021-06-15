@@ -170,8 +170,12 @@ void InstrumentIns(INS ins, void* v)
         if (INS_Opcode(ins) == XED_ICLASS_DIVSD) {
             foundFloatIns = true;
         }
-        Instruction* instr = cfg.addInstruction(ins);
+        Instruction* instr = new Instruction();
+        instr->addr = INS_Address(ins);
+        instr->size = INS_Size(ins);
+        instr->disassembly = INS_Disassemble(ins);
         instr->afterFloatIns = foundFloatIns;
+        cfg.addInstruction(instr);
 
         INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)insExecuted,
             IARG_PTR, instr, 
@@ -219,15 +223,23 @@ void Fini(int32_t code, void* v)
     //uint32_t freqThreshold = 1;
 
     cfg.splitWithJumps(jumps);
-    cfg.printBasicBlocks(codeDumpFile);
     
     uint32_t instrCount = 0;
-    uint32_t frequentInstrCount = 0;
-    uint32_t afterFloatInstrCount = 0;
+    uint32_t bbCount = 0; 
+
+    std::vector<BasicBlock*> bbls = cfg.getBasicBlocks();
+    for (BasicBlock* bb : bbls) {
+        bbCount++;
+        for (Instruction* instr : bb->instrs) {
+            instrCount++;
+            fprintf(codeDumpFile, "0x%lx\t[%u]\t%s\n", instr->addr, instr->exec_count, instr->disassembly.c_str());
+        }
+        fprintf(codeDumpFile, "\n");
+    }
+
 
     fprintf(metricsFile, "Main Image Distinct Instructions : %u\n", instrCount);
-    fprintf(metricsFile, "Main Image Frequent Instructions : %u\n", frequentInstrCount);
-    fprintf(metricsFile, "Main Image Frequent + After Float Instructions : %u\n", afterFloatInstrCount);
+    fprintf(metricsFile, "Main Image Basic Block Count : %u\n", bbCount);
     fprintf(metricsFile, "Found Float Instruction : %d\n", (int)foundFloatIns);
 
     fclose(syscallFile);
@@ -252,6 +264,26 @@ int main(int argc, char* argv[])
     metricsFile = fopen((outputFolder + "metrics").c_str(), "w");
     codeDumpFile = fopen((outputFolder + "code_dump").c_str(), "w");
     errorFile = fopen((outputFolder + "errors").c_str(), "w");
+
+    //////////////////////////////////////////////
+
+    /*CFG* cfg = new CFG();
+    cfg->addInstruction(new Instruction(10, "A"));
+    cfg->addInstruction(new Instruction(12, "B"));
+    cfg->addInstruction(new Instruction(22, "D"));
+
+    jumps.insert(std::make_pair(22, 10));
+    jumps.insert(std::make_pair(10, 12));
+    cfg->splitWithJumps(jumps);
+    cfg->printBasicBlocks(codeDumpFile);
+    
+    fclose(syscallFile);
+    fclose(metricsFile);
+    fclose(codeDumpFile);
+    fclose(imgFile);
+    fclose(errorFile);
+    return 0;*/
+    /////////////////////////////////////////////
 
     INS_AddInstrumentFunction(InstrumentIns, 0);
     //PIN_AddSyscallExitFunction(syscallExit, 0);
