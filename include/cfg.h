@@ -19,15 +19,22 @@ public:
     std::vector<BasicBlock*> nextBBs;
 };
 
+class Jump
+{
+public:
+    uint64_t fromAddr;
+    uint64_t toAddr;
+    Jump(uint64_t fromAddr_, uint64_t toAddr_);
+    friend bool operator<(const Jump&, const Jump&);
+};
+
 class CFG
 {
 public:
-    // creates a basic block for each single instruction
-    CFG(const std::vector<uint32_t>& instructions);
-    // merge basic blocks according to a given execution trace.
-    // addressTrace : addresses of all successive instructions executed.
-    mergeBBs(const std::vector<uint64_t> addressTrace);
-    writeDotGraph(FILE* file);
-private:
-    std::map<uint64_t, BasicBlock*> bblByFirstAddr;
+    CFG(const std::vector<Instruction*>& instructions, 
+        const std::map<Jump, uint32_t>& jumps);
+    void mergeBlocks();
+    void writeDotGraph(FILE* file);
+private: 
+    std::vector<BasicBlock*> bbList;
 };

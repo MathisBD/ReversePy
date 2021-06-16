@@ -79,15 +79,17 @@ SANITY_SUBSET := $(TEST_TOOL_ROOTS) $(TEST_ROOTS)
 # This section contains the build rules for all binaries that have special build rules.
 # See makefile.default.rules for the default build rules.
 
-SRC=tool.cpp
+SRC=tool.cpp \
+cfg.cpp \
+errors.cpp
+
 
 $(OBJDIR)%$(OBJ_SUFFIX): src/%.cpp 
-	$(CXX) $(TOOL_CXXFLAGS) -Iinclude -MD $(COMP_OBJ) $@ $<
-
-#$(OBJDIR)tool$(PINTOOL_SUFFIX): $(SRC:%.cpp=$(OBJDIR)%$(OBJ_SUFFIX))
-#	$(LINKER) $(TOOL_LDFLAGS_NOOPT) $(LINK_EXE) $@ $(^:%.h=) $(TOOL_LPATHS) $(TOOL_LIBS)
+	$(CXX) $(TOOL_CXXFLAGS) -Iinclude -MD $(COMP_OBJ) $@ $< \
+	-Wno-unused-variable \
+	-Wno-unused-but-set-variable
 
 $(OBJDIR)tool$(PINTOOL_SUFFIX): $(SRC:%.cpp=$(OBJDIR)%$(OBJ_SUFFIX))
-	$(LINKER) $(TOOL_LDFLAGS_NOOPT) $(LINK_EXE) $@ $^ $(TOOL_LPATHS) $(TOOL_LIBS)
+	$(LINKER) $(TOOL_LDFLAGS_NOOPT) -Iinclude $(LINK_EXE) $@ $^ $(TOOL_LPATHS) $(TOOL_LIBS)
 
 -include $(SRC:%.cpp=src/%.d)

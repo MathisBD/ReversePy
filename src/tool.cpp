@@ -2,20 +2,23 @@
 #include <string>
 #include <stdio.h>
 
+#include "cfg.h"
 #include "pin.H"
 
 
 KNOB< std::string > outputFolderKnob(KNOB_MODE_WRITEONCE, "pintool", "o", "output", "specify output folder name");
 static FILE* codeDumpFile;
-static FILE* addrDumpFile;
 static std::map<uint64_t, Instruction*> instrList;
+static std::map<Jump, uint32_t> jumps;
+static uint64_t prevAddr = 0;
 
 // called each time we execute an instruction
 // (before we actually execute it).
 void insExecuted(Instruction* instr)
 {
-    fprintf(addrDumpFile, "0x%lx\n", instr->addr);
     (instr->execCount)++;
+    jumps[Jump(prevAddr, instr->addr)]++;
+    prevAddr = instr->addr;
 }
 
 // called by PIN each time we encounter an instruction for 
@@ -39,31 +42,44 @@ void insPinCallback(INS ins, void* v)
         IARG_PTR, instr, IARG_END);
 }
 
-// called by PIN at the end of the program.
-// we can't write to stdout here since stdout might
-// have been closed.
-void finiPinCallback(int code, void* v)
+void removeDeadInstrs()
 {
-    // remove the instructions we never actually executed
     for (auto it = instrList.begin(); it != instrList.end();) {
         if (it->second->execCount == 0) {
+            delete it->second;
             instrList.erase(it++);
         }
         else {
             it++;
         }
     }
+}
 
-    // dump the instructions
+void dumpInstrList()
+{
     for (auto it = instrList.begin(); it != instrList.end(); it++) {
         Instruction* instr = it->second;
         fprintf(codeDumpFile, "0x%lx: [%u] %s\n", 
             instr->addr, instr->execCount, instr->disassembly.c_str());
     }
+}
+
+// called by PIN at the end of the program.
+// we can't write to stdout here since stdout might
+// have been closed.
+void finiPinCallback(int code, void* v)
+{
+    removeDeadInstrs();
+    dumpInstrList();
+
+    std::vector<Instruction*> instrVect;
+    for (auto it = instrList.begin(); it != instrList.end(); it++) {
+        instrVect.push_back(it->second);
+    }
+    CFG* cfg = new CFG(instrVect, jumps);
 
     // close the log files
     fclose(codeDumpFile);
-    fclose(addrDumpFile);
 }
 
 int main(int argc, char* argv[])
@@ -82,7 +98,6 @@ int main(int argc, char* argv[])
         outputFolder.push_back('/');
     }
     codeDumpFile = fopen((outputFolder + "code_dump").c_str(), "w");
-    addrDumpFile = fopen((outputFolder + "addr_dump").c_str(), "w");
     
     // add PIN callbacks
     INS_AddInstrumentFunction(insPinCallback, 0);

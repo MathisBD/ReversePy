@@ -3,7 +3,7 @@ PIN_ROOT=$(CURDIR)/../pin-3.19-98425-gd666b2bee-gcc-linux
 OUTPUT_DIR=$(CURDIR)/output
 TOOL=obj-intel64/tool.so
 
-PROG:=ls
+PROG?=ls
 
 # example usage : make PROG="python3 prog.py"
 all:
