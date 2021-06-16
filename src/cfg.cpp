@@ -8,7 +8,7 @@ Jump::Jump(uint64_t fromAddr_, uint64_t toAddr_)
     toAddr = toAddr_;
 }
 
-// DON'T make this inline (compilation errors...)
+// DON'T make this inline (linking errors...)
 bool operator<(const Jump& A, const Jump& B)
 {
     return A.fromAddr < B.fromAddr ||  (A.fromAddr == B.fromAddr && A.toAddr < B.toAddr);
@@ -32,21 +32,63 @@ CFG::CFG(const std::vector<Instruction*>& instructions,
         BasicBlock* bb = new BasicBlock();
         bb->instrs.push_back(instr);
 
-        bbList.push_back(bb);
+        bbVect.push_back(bb);
         bbByFirstAddr[instr->addr] = bb;
     }
     
     // link the basic blocks
-    for (auto it = bbByFirstAddr.begin(); it != bbByFirstAddr.end(); it++) {
-        uint64_t addr = it->first;
-        BasicBlock* bb = it->second;
+    for (BasicBlock* bb : bbVect) {
+        uint64_t addr = bb->instrs[0]->addr;
         for (uint64_t toAddr : jumpsFromAddr[addr]) {
-            if (bbByFirstAddr.find(toAddr) == bbByFirstAddr.end()) {
-                panic("Didn't find bb starting at 0x%lx\n", toAddr);
+            // It is possible that the user didn't give us all of the instructions,
+            // but still gave us all the jumps. Just ignore the jumps
+            // that don't lead to code we have here.
+            if (bbByFirstAddr.find(toAddr) != bbByFirstAddr.end()) {
+                bb->nextBBs.push_back(bbByFirstAddr[toAddr]);
             }
-            bb->nextBBs.push_back(bbByFirstAddr[toAddr]);
         }
     }
 }
 
+void CFG::resetDfsStates()
+{
+    for (BasicBlock* bb : bbVect) {
+        bb->dfsState = DFS_UNVISITED;
+    }
+}
+
+void CFG::dotDFS(FILE* file, BasicBlock* bb)
+{
+    bb->dfsState = DFS_VISITED;
+
+    // use the bb address as a unique identifier
+    fprintf(file, "\t%lu[ label=\"", (uint64_t)bb);
+    for (auto instr : bb->instrs) {
+        fprintf(file, "0x%lx: %s\\l", instr->addr, instr->disassembly.c_str());
+    }
+    fprintf(file, "\" ]\n");
+
+    for (auto nextBB : bb->nextBBs) {
+        fprintf(file, "\t%lu -> %lu\n", (uint64_t)bb, (uint64_t)nextBB);
+        if (nextBB->dfsState == DFS_UNVISITED) {
+            dotDFS(file, nextBB);
+        }
+    }
+}
+
+void CFG::writeDotGraph(FILE* file)
+{
+    fprintf(file, "digraph {\n");
+    fprintf(file, "\tsplines=ortho\n");
+    fprintf(file, "\tnode[ shape=box ]\n");
+
+    resetDfsStates();
+    for (auto bb : bbVect) {
+        if (bb->dfsState == DFS_UNVISITED) {
+            dotDFS(file, bb);
+        }
+    }
+
+    fprintf(file, "}\n");
+}
 

@@ -2,6 +2,11 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <stdio.h>
+
+
+#define DFS_UNVISITED   0
+#define DFS_VISITED     1
 
 class Instruction
 {
@@ -17,6 +22,7 @@ class BasicBlock
 public:
     std::vector<Instruction*> instrs;
     std::vector<BasicBlock*> nextBBs;
+    uint32_t dfsState;
 };
 
 class Jump
@@ -36,5 +42,7 @@ public:
     void mergeBlocks();
     void writeDotGraph(FILE* file);
 private: 
-    std::vector<BasicBlock*> bbList;
+    std::vector<BasicBlock*> bbVect;
+    void resetDfsStates();
+    void dotDFS(FILE* file, BasicBlock* bb);
 };
