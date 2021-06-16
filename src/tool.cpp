@@ -2,12 +2,14 @@
 #include <string>
 #include <stdio.h>
 
+#include "errors.h"
 #include "cfg.h"
 #include "pin.H"
 
 
 KNOB< std::string > outputFolderKnob(KNOB_MODE_WRITEONCE, "pintool", "o", "output", "specify output folder name");
 static FILE* codeDumpFile;
+static FILE* addrDumpFile;
 static std::map<uint64_t, Instruction*> instrList;
 static std::map<Jump, uint32_t> jumps;
 static uint64_t prevAddr = 0;
@@ -16,6 +18,8 @@ static uint64_t prevAddr = 0;
 // (before we actually execute it).
 void insExecuted(Instruction* instr)
 {
+    fprintf(addrDumpFile, "0x%lx %s\n",
+        instr->addr, instr->disassembly.c_str());
     (instr->execCount)++;
     jumps[Jump(prevAddr, instr->addr)]++;
     prevAddr = instr->addr;
@@ -44,15 +48,16 @@ void insPinCallback(INS ins, void* v)
 
 void removeDeadInstrs()
 {
-    for (auto it = instrList.begin(); it != instrList.end();) {
+    std::map<uint64_t, Instruction*> newInstrs;
+    for (auto it = instrList.begin(); it != instrList.end(); it++) {
         if (it->second->execCount == 0) {
             delete it->second;
-            instrList.erase(it++);
         }
         else {
-            it++;
+            newInstrs[it->first] = it->second;
         }
     }
+    instrList = newInstrs;
 }
 
 void dumpInstrList()
@@ -72,14 +77,15 @@ void finiPinCallback(int code, void* v)
     removeDeadInstrs();
     dumpInstrList();
 
-    std::vector<Instruction*> instrVect;
+    /*std::vector<Instruction*> instrVect;
     for (auto it = instrList.begin(); it != instrList.end(); it++) {
         instrVect.push_back(it->second);
     }
-    CFG* cfg = new CFG(instrVect, jumps);
+    CFG* cfg = new CFG(instrVect, jumps);*/
 
     // close the log files
     fclose(codeDumpFile);
+    fclose(addrDumpFile);
 }
 
 int main(int argc, char* argv[])
@@ -98,7 +104,8 @@ int main(int argc, char* argv[])
         outputFolder.push_back('/');
     }
     codeDumpFile = fopen((outputFolder + "code_dump").c_str(), "w");
-    
+    addrDumpFile = fopen((outputFolder + "addr_dump").c_str(), "w");
+
     // add PIN callbacks
     INS_AddInstrumentFunction(insPinCallback, 0);
     //IMG_AddInstrumentFunction(ImageLoad, 0);

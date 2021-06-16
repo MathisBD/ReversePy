@@ -41,7 +41,9 @@ CFG::CFG(const std::vector<Instruction*>& instructions,
         uint64_t addr = it->first;
         BasicBlock* bb = it->second;
         for (uint64_t toAddr : jumpsFromAddr[addr]) {
-            assert(jumps.find(Jump(addr, toAddr)) != jumps.end());
+            if (bbByFirstAddr.find(toAddr) == bbByFirstAddr.end()) {
+                panic("Didn't find bb starting at 0x%lx\n", toAddr);
+            }
             bb->nextBBs.push_back(bbByFirstAddr[toAddr]);
         }
     }

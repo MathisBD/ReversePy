@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-void assert(bool cond)
+void pAssert(bool cond)
 {
     if (!cond) {
         panic("assertion failed\n");
