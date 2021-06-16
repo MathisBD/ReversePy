@@ -28,21 +28,25 @@ void insExecuted(Instruction* instr)
 
 // called by PIN each time we encounter an instruction for 
 // the first time (and before we execute this instruction).
+// WEIRDLY, pin can call this several times for the same instruction,
+// and can call it for an instruction that will never be executed.
 void insPinCallback(INS ins, void* v)
 {
     if (INS_IsNop(ins)) {
         return;
     }
-    Instruction* instr = new Instruction();
-    instr->addr = INS_Address(ins);
-    instr->size = INS_Size(ins);
-    instr->execCount = 0;
-    instr->disassembly = INS_Disassemble(ins);
-    // save a pointer to the instruction
-    instrList[instr->addr] = instr;
+    if (instrList.find(INS_Address(ins)) == instrList.end()) {
+        Instruction* instr = new Instruction();
+        instr->addr = INS_Address(ins);
+        instr->size = INS_Size(ins);
+        instr->execCount = 0;
+        instr->disassembly = INS_Disassemble(ins);    
+        // save a pointer to the instruction
+        instrList[instr->addr] = instr;
 
-    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)insExecuted,
-        IARG_PTR, instr, IARG_END);
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)insExecuted,
+            IARG_PTR, instr, IARG_END);
+    }
 }
 
 // called by PIN at the end of the program.
