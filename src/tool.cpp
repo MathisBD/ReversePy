@@ -40,19 +40,23 @@ uint32_t getImgId(uint64_t addr)
     return 0;
 }
 
-// called each time we execute an instruction
+// called each time we execute any instruction
 // (before we actually execute it).
-void insExecuted(Instruction* instr)
+void increaseExecCount(Instruction* instr) 
 {
-    fprintf(addrDumpFile, "0x%lx: <%u> %s\n",
-        instr->addr, getImgId(instr->addr), instr->disassembly.c_str());
+    //fprintf(addrDumpFile, "0x%lx: <%u> %s\n",
+    //    instr->addr, getImgId(instr->addr), instr->disassembly.c_str());
     (instr->execCount)++;
-    
-    if (getImgId(instr->addr) == mainImgId) {
-        jumps[Jump(prevAddr, instr->addr)]++;
-        prevAddr = instr->addr;
-    }
 }
+
+// called each time we execute a selected instruction
+// (before we actually execute it).
+void recordJump(uint64_t addr)
+{
+    jumps[Jump(prevAddr, addr)]++;
+    prevAddr = addr;
+}
+
 
 // called by PIN each time we encounter an instruction for 
 // the first time (and before we execute this instruction).
@@ -80,8 +84,12 @@ void insPinCallback(INS ins, void* v)
         instr = it->second;
     }
     // I have to call this every time, not only if we just created instr.
-    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)insExecuted,
-        IARG_PTR, instr, IARG_END);
+    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)increaseExecCount, IARG_PTR, instr, IARG_END);
+    if (getImgId(instr->addr) == mainImgId) {
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)recordJump,
+            IARG_UINT64, instr->addr, 
+            IARG_END);
+    }
 }
 
 void removeDeadInstrs()
