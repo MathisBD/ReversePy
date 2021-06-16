@@ -10,6 +10,7 @@ public:
     uint64_t addr;
     uint32_t size;
     uint32_t execCount;
+    std::string disassembly;
 };
 
 KNOB< std::string > outputFolderKnob(KNOB_MODE_WRITEONCE, "pintool", "o", "output", "specify output folder name");
@@ -36,6 +37,7 @@ void insPinCallback(INS ins, void* v)
     instr->addr = INS_Address(ins);
     instr->size = INS_Size(ins);
     instr->execCount = 0;
+    instr->disassembly = INS_Disassemble(ins);
     // save a pointer to the instruction
     instrList[instr->addr] = instr;
 
@@ -51,8 +53,8 @@ void finiPinCallback(int code, void* v)
     // dump the instructions
     for (auto it = instrList.begin(); it != instrList.end(); it++) {
         Instruction* instr = it->second;
-        fprintf(codeDumpFile, "0x%lx: [%u]\n", 
-            instr->addr, instr->execCount);
+        fprintf(codeDumpFile, "0x%lx: [%u] %s\n", 
+            instr->addr, instr->execCount, instr->disassembly.c_str());
     }
 
     // close the log files
