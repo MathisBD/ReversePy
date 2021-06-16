@@ -154,11 +154,11 @@ void syscallExit(THREADID tid, CONTEXT* ctx, SYSCALL_STANDARD sysStd, VOID* v)
     process_syscall_ret(PIN_GetSyscallReturn(ctx, sysStd));
 }*/
 
-void insExecuted(Instruction* instr, ADDRINT addr)
+void insExecuted(Instruction* instr)
 {
-    (instr->exec_count)++;
-    jumps.insert(std::make_pair(prevAddr, (uint64_t)addr));
-    prevAddr = (uint64_t)addr;
+    ++(instr->exec_count);
+    jumps.insert(std::make_pair(prevAddr, instr->addr));
+    prevAddr = instr->addr;
 }
 
 void InstrumentIns(INS ins, void* v)
@@ -172,6 +172,7 @@ void InstrumentIns(INS ins, void* v)
             foundFloatIns = true;
         }
         Instruction* instr = new Instruction();
+        instr->exec_count = 0;
         instr->addr = INS_Address(ins);
         instr->size = INS_Size(ins);
         instr->disassembly = INS_Disassemble(ins);
@@ -180,7 +181,6 @@ void InstrumentIns(INS ins, void* v)
 
         INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)insExecuted,
             IARG_PTR, instr, 
-            IARG_ADDRINT, INS_Address(ins),
             IARG_END);
     }
 
@@ -228,7 +228,7 @@ void Fini(int32_t code, void* v)
     uint32_t instrCount = 0;
     uint32_t bbCount = 0; 
 
-    //cfg.pruneDeadCode();
+    cfg.pruneUnfrequentInstrs(5000);
 
     std::vector<BasicBlock*> bbls = cfg.getBasicBlocks();
     for (BasicBlock* bb : bbls) {
@@ -257,7 +257,10 @@ void Fini(int32_t code, void* v)
 int main(int argc, char* argv[])
 {
     PIN_InitSymbols();
-    PIN_Init(argc, argv);
+    if (PIN_Init(argc, argv)) {
+        printf("PIN INIT ERROR\n");
+        return EXIT_FAILURE;
+    }
     PIN_SetSyntaxATT();
 
     std::string outputFolder = outputFolderKnob.Value().c_str();

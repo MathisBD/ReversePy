@@ -31,6 +31,7 @@ public:
 
     uint8_t dfsState; // used by the CFG to do a DFS
     uint32_t id; // used by the CFG
+    std::set<BasicBlock*> reachable; // used by the CFG to prune unfrequent instructions
 
     BasicBlock(Instruction* firstInstr);
 };
@@ -44,7 +45,7 @@ public:
     void splitWithJumps(const std::set<std::pair<uint64_t, uint64_t>>& jumps);
     std::vector<BasicBlock*> getBasicBlocks();
     void writeDotGraph(FILE* file);
-    void pruneDeadCode();
+    void pruneUnfrequentInstrs(uint32_t freqTheshold);
 private:
     std::map<uint64_t, BasicBlock*> bbByFirstAddr;
     std::map<uint64_t, std::vector<uint64_t>> jumpsFromAddr;
@@ -54,5 +55,5 @@ private:
     void mergeBlockFront(BasicBlock* bb);
     void splitDFS(BasicBlock* bb);
     void dotDFS(FILE* file, BasicBlock* bb);
-    void pruneDFS(BasicBlock* bb);
+    void pruneDFS(BasicBlock* org, BasicBlock* cur);
 };

@@ -1,30 +1,36 @@
-Loading /usr/bin/ls, ID is 1
-	region 564181ee9000 -> 564181eec6a7
-	region 564181eed000 -> 564181f00580
-	region 564181f01000 -> 564181f09b4f
-	region 564181f0b010 -> 564181f0d557
+Loading /usr/bin/python3.8, ID is 1
+	region 400000 -> 422967
+	region 423000 -> 6b5aa4
+	region 6b6000 -> 8f1ef7
+	region 8f3db0 -> 95dc27
 Loading /lib64/ld-linux-x86-64.so.2, ID is 2
-	region 7fe993776000 -> 7fe993776fc7
-	region 7fe993777000 -> 7fe993799673
-	region 7fe99379a000 -> 7fe9937a1ccb
-	region 7fe9937a3520 -> 7fe9937a518f
+	region 7f52a1ec8000 -> 7f52a1ec8fc7
+	region 7f52a1ec9000 -> 7f52a1eeb673
+	region 7f52a1eec000 -> 7f52a1ef3ccb
+	region 7f52a1ef5520 -> 7f52a1ef718f
 Loading [vdso], ID is 3
-	region 7ffd443a5000 -> 7ffd443a5ec7
-Loading /lib/x86_64-linux-gnu/libselinux.so.1, ID is 4
-	region 7fe97eef8000 -> 7fe97ef22a07
-Loading /lib/x86_64-linux-gnu/libc.so.6, ID is 5
-	region 7fe97ecc3000 -> 7fe97eeb44d7
-Loading /lib/x86_64-linux-gnu/libpcre2-8.so.0, ID is 6
-	region 7fe97ec33000 -> 7fe97ecc2327
-Loading /lib/x86_64-linux-gnu/libdl.so.2, ID is 7
-	region 7fe97eeb9000 -> 7fe97eebe10f
-Loading /lib/x86_64-linux-gnu/libpthread.so.0, ID is 8
-	region 7fe97ec09000 -> 7fe97ec2b477
-Unloading /usr/bin/ls
+	region 7fffeaded000 -> 7fffeadedec7
+Loading /lib/x86_64-linux-gnu/libc.so.6, ID is 4
+	region 7f528c4ac000 -> 7f528c69d4d7
+Loading /lib/x86_64-linux-gnu/libpthread.so.0, ID is 5
+	region 7f528c44e000 -> 7f528c470477
+Loading /lib/x86_64-linux-gnu/libdl.so.2, ID is 6
+	region 7f528c478000 -> 7f528c47d10f
+Loading /lib/x86_64-linux-gnu/libutil.so.1, ID is 7
+	region 7f528c473000 -> 7f528c47710f
+Loading /lib/x86_64-linux-gnu/libm.so.6, ID is 8
+	region 7f528c2ff000 -> 7f528c44d10f
+Loading /lib/x86_64-linux-gnu/libexpat.so.1, ID is 9
+	region 7f528c2d1000 -> 7f528c2fe09f
+Loading /lib/x86_64-linux-gnu/libz.so.1, ID is 10
+	region 7f528c2b3000 -> 7f528c2ce0b7
+Unloading /usr/bin/python3.8
 Unloading /lib64/ld-linux-x86-64.so.2
 Unloading [vdso]
-Unloading /lib/x86_64-linux-gnu/libselinux.so.1
 Unloading /lib/x86_64-linux-gnu/libc.so.6
-Unloading /lib/x86_64-linux-gnu/libpcre2-8.so.0
-Unloading /lib/x86_64-linux-gnu/libdl.so.2
 Unloading /lib/x86_64-linux-gnu/libpthread.so.0
+Unloading /lib/x86_64-linux-gnu/libdl.so.2
+Unloading /lib/x86_64-linux-gnu/libutil.so.1
+Unloading /lib/x86_64-linux-gnu/libm.so.6
+Unloading /lib/x86_64-linux-gnu/libexpat.so.1
+Unloading /lib/x86_64-linux-gnu/libz.so.1
