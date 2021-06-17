@@ -132,6 +132,7 @@ void finiPinCallback(int code, void* v)
         }
     }
     CFG* cfg = new CFG(cfgInstrVect, jumps);
+    cfg->mergeBlocks();
     cfg->writeDotGraph(cfgDotFile);
 
     // close the log files

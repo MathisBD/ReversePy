@@ -45,6 +45,7 @@ CFG::CFG(const std::vector<Instruction*>& instructions,
             // that don't lead to code we have here.
             if (bbByFirstAddr.find(toAddr) != bbByFirstAddr.end()) {
                 bb->nextBBs.push_back(bbByFirstAddr[toAddr]);
+                bbByFirstAddr[toAddr]->prevBBs.push_back(bb);
             }
         }
     }
@@ -92,3 +93,50 @@ void CFG::writeDotGraph(FILE* file)
     fprintf(file, "}\n");
 }
 
+void CFG::mergeDFS(BasicBlock* bb)
+{
+    bb->dfsState = DFS_VISITED;
+
+    while (bb->nextBBs.size() == 1) {
+        auto nextBB = bb->nextBBs[0];
+        
+        if (nextBB->prevBBs.size() == 1) {
+            // merge the next block into the current one
+            for (auto instr : nextBB->instrs) {
+                bb->instrs.push_back(instr);
+            }
+            bb->nextBBs = nextBB->nextBBs;
+            nextBB->dfsState = DFS_MERGED;
+        }
+        else {
+            break;
+        }
+    }
+    // recurse on the next blocks
+    for (auto nextBB : bb->nextBBs) {
+        if (nextBB->dfsState == DFS_UNVISITED) {
+            mergeDFS(nextBB);
+        }
+    }
+}
+
+void CFG::mergeBlocks()
+{
+    resetDfsStates();
+    for (auto bb : bbVect) {
+        if (bb->dfsState == DFS_UNVISITED) {
+            mergeDFS(bb);
+        }
+    }
+    // delete any merged blocks
+    std::vector<BasicBlock*> unmergedBBs;
+    for (auto bb : bbVect) {
+        if (bb->dfsState == DFS_MERGED) {
+            delete bb;
+        }
+        else {
+            unmergedBBs.push_back(bb);
+        }
+    }
+    bbVect = unmergedBBs;
+}

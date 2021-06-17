@@ -7,6 +7,7 @@
 
 #define DFS_UNVISITED   0
 #define DFS_VISITED     1
+#define DFS_MERGED      2
 
 class Instruction
 {
@@ -21,6 +22,7 @@ class BasicBlock
 {
 public:
     std::vector<Instruction*> instrs;
+    std::vector<BasicBlock*> prevBBs;
     std::vector<BasicBlock*> nextBBs;
     uint32_t dfsState;
 };
@@ -45,4 +47,5 @@ private:
     std::vector<BasicBlock*> bbVect;
     void resetDfsStates();
     void dotDFS(FILE* file, BasicBlock* bb);
+    void mergeDFS(BasicBlock* bb);
 };
