@@ -1,5 +1,7 @@
 
-PIN_ROOT=$(CURDIR)/../pin-3.19-98425-gd666b2bee-gcc-linux
+ifndef PIN_ROOT
+	PIN_ROOT=$(CURDIR)/../pin-3.19-98425-gd666b2bee-gcc-linux
+endif
 OUTPUT_DIR=$(CURDIR)/output
 TOOL=obj-intel64/tool.so
 
