@@ -152,6 +152,8 @@ void CFG::resetDfsStates()
 
 void CFG::writeDotGraph(FILE* file)
 {
+    uint32_t maxBBSize = 10;
+
     fprintf(file, "digraph {\n");
     fprintf(file, "\tsplines=ortho\n");
     fprintf(file, "\tnode[ shape=box ]\n");
@@ -159,8 +161,14 @@ void CFG::writeDotGraph(FILE* file)
     for (auto bb : bbVect) {
         // use the bb address as a unique identifier
         fprintf(file, "\t%lu[ label=\"", (uint64_t)bb);
-        for (auto instr : bb->instrs) {
-            fprintf(file, "0x%lx: %s\\l", instr->addr, instr->disassembly.c_str());
+        for (uint32_t i = 0; i < bb->instrs.size(); i++) {
+            if (i < (maxBBSize/2) || i >= bb->instrs.size() - (maxBBSize/2)) {
+                fprintf(file, "0x%lx: [%u] %s\\l", bb->instrs[i]->addr, 
+                    bb->instrs[i]->execCount, bb->instrs[i]->disassembly.c_str());
+            }
+            if (i == (maxBBSize/2)) {
+                fprintf(file, ".....\\l");
+            }
         }
         fprintf(file, "\" ]\n");
     
@@ -242,10 +250,11 @@ std::vector<BasicBlock*> CFG::getBasicBlocks()
     return bbVect;
 }
 
-void eraseEdges(std::vector<Edge>& edges, uint32_t freqThreshold)
+void eraseEdges(std::vector<Edge>& edges, uint32_t bbFreqThreshold, uint32_t edgeFreqThreshold)
 {
     for (auto edgeIt = edges.begin(); edgeIt != edges.end();) {
-        if (edgeIt->bb->instrs[0]->execCount < freqThreshold) {
+        if (edgeIt->bb->instrs[0]->execCount < bbFreqThreshold ||
+            edgeIt->execCount < edgeFreqThreshold) {
             edgeIt = edges.erase(edgeIt);    
         }
         else {
@@ -254,19 +263,19 @@ void eraseEdges(std::vector<Edge>& edges, uint32_t freqThreshold)
     }
 }
 
-void CFG::filterBBs(uint32_t freqThreshold)
+void CFG::filterBBs(uint32_t bbFreqThreshold, uint32_t edgeFreqThreshold)
 {
     // first remove the links
     for (auto bb : bbVect) {
-        if (bb->instrs[0]->execCount >= freqThreshold) {
-            eraseEdges(bb->nextBBs, freqThreshold);
-            eraseEdges(bb->prevBBs, freqThreshold);
+        if (bb->instrs[0]->execCount >= bbFreqThreshold) {
+            eraseEdges(bb->nextBBs, bbFreqThreshold, edgeFreqThreshold);
+            eraseEdges(bb->prevBBs, bbFreqThreshold, edgeFreqThreshold);
         }
     }
     // then remove the basic blocks
     for (auto it = bbVect.begin(); it != bbVect.end();) {
         BasicBlock* bb = *it;
-        if (bb->instrs[0]->execCount < freqThreshold) {
+        if (bb->instrs[0]->execCount < bbFreqThreshold) {
             delete bb;
             it = bbVect.erase(it);
         }

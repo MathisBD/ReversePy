@@ -1,2 +1,4 @@
+f = open("tototo", "w")
 for i in range(10000):
-    print(i, end=" ")
+    f.write("%d" % i)
+f2 = open("tototo_after", "w")

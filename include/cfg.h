@@ -59,7 +59,7 @@ public:
     void writeDotGraph(FILE* file);
     void checkIntegrity(bool checkExecCounts);
     std::vector<BasicBlock*> getBasicBlocks();
-    void filterBBs(uint32_t freqThreshold);
+    void filterBBs(uint32_t bbFreqThreshold, uint32_t edgeFreqThreshold);
 private: 
     std::vector<BasicBlock*> bbVect;
     void resetDfsStates();
