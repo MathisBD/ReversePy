@@ -18,13 +18,27 @@ public:
     std::string disassembly;
 };
 
+class Edge;
+
 class BasicBlock
 {
 public:
     std::vector<Instruction*> instrs;
-    std::vector<BasicBlock*> prevBBs;
-    std::vector<BasicBlock*> nextBBs;
+    std::vector<Edge> prevBBs;
+    std::vector<Edge> nextBBs;
     uint32_t dfsState;
+
+    // requires the basic block to have at least one instruction
+    uint64_t firstAddr();
+};
+
+class Edge
+{
+public:
+    uint32_t execCount;
+    BasicBlock* bb;
+    Edge(uint32_t execCount_, BasicBlock* bb_);
+    friend bool operator==(const Edge&, const Edge&);
 };
 
 class Jump
@@ -43,9 +57,11 @@ public:
         const std::map<Jump, uint32_t>& jumps);
     void mergeBlocks();
     void writeDotGraph(FILE* file);
+    void checkIntegrity(bool checkExecCounts);
+    std::vector<BasicBlock*> getBasicBlocks();
+    void filterBBs(uint32_t freqThreshold);
 private: 
     std::vector<BasicBlock*> bbVect;
     void resetDfsStates();
-    void dotDFS(FILE* file, BasicBlock* bb);
     void mergeDFS(BasicBlock* bb);
 };

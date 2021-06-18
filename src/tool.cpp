@@ -132,8 +132,38 @@ void finiPinCallback(int code, void* v)
         }
     }
     CFG* cfg = new CFG(cfgInstrVect, jumps);
+    cfg->checkIntegrity(true);
+
     cfg->mergeBlocks();
+    cfg->checkIntegrity(true);
+    printf("MERGE\n");
+
+    cfg->filterBBs(5000);
+    cfg->checkIntegrity(false);
+    printf("FILTER\n");
+
+    /*for (auto bb : cfg->getBasicBlocks()) {
+        printf("0x%lx -> [ ", bb->firstAddr());
+        for (auto edge : bb->nextBBs) {
+            printf("0x%lx ", edge.bb->firstAddr());
+        }
+        printf("]\n");
+
+        printf("[ ");
+        for (auto edge : bb->prevBBs) {
+            printf("0x%lx ", edge.bb->firstAddr());
+        }
+        printf("] -> 0x%lx\n", bb->firstAddr());
+    }*/
+
+    // exec counts now don't mean anything
+    cfg->mergeBlocks();
+    cfg->checkIntegrity(false);
+    printf("MERGE\n");
+
     cfg->writeDotGraph(cfgDotFile);
+
+    printf("Basic block count : %lu\n", cfg->getBasicBlocks().size());
 
     // close the log files
     fclose(codeDumpFile);
