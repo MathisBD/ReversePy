@@ -227,7 +227,7 @@ int main(int argc, char* argv[])
     
     // add PIN callbacks
     INS_AddInstrumentFunction(insCallback, 0);
-    //IMG_AddInstrumentFunction(imgMemCallback, 0);
+    IMG_AddInstrumentFunction(imgMemCallback, 0);
     IMG_AddInstrumentFunction(imgLoadCallback, 0);
     IMG_AddUnloadFunction(imgUnloadCallback, 0);
     PIN_AddFiniFunction(finiCallback, 0);

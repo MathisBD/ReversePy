@@ -1,17 +1,21 @@
 #include "mem.h"
-
+#include <map>
+#include "errors.h"
 
 
 // initialize this to some illegal value (not 0, not a small integer).
 // not static (other files will want to access this)
 uint32_t mainImgId = 999999;
 
-#define HEAP_REGION     1000 // let's just hope the program doesn't load more than 1000 shared libraries
+#define HEAP_REG_ID 1000 // let's just hope the program doesn't load more than 1000 shared libraries
 // maps start address -> region
 static std::map<uint64_t, ImgRegion*> imgRegions;
 
 // counts the number of reads at each memory address
 static std::map<uint64_t, uint32_t> memReadCount;
+
+// the argument passed to the last call to malloc()
+static uint64_t lastMallocSize;
 
 void recordMemoryRead(ADDRINT addr, UINT32 size, void* v)
 {
@@ -48,7 +52,7 @@ std::vector<uint64_t> searchBytes(uint8_t* bytes, uint64_t n, const std::vector<
 {
     std::vector<uint64_t> res;
     for (ImgRegion* reg : regions) {
-        printf("searching in 0x%lx -> 0x%lx\n", reg->startAddr, reg->endAddr);
+        //printf("searching in 0x%lx -> 0x%lx\n", reg->startAddr, reg->endAddr);
         for (uint64_t addr = reg->startAddr; addr+n-1 <= reg->endAddr; addr++) {
             if (!memcmp(bytes, (uint8_t*)addr, n)) {
                 res.push_back(addr);
@@ -60,16 +64,17 @@ std::vector<uint64_t> searchBytes(uint8_t* bytes, uint64_t n, const std::vector<
 
 void searchForPyOpcodes()
 {
-    /*uint8_t bytes[] = {
-        0x65, 0x64, 0x64
+    uint8_t bytes[] = {
+        0x64, 0x00, 0x64, 0x01
     };
-    std::vector<ImgRegion*> mainImgRegions;
-    for (auto it =  imgRegions) {
-        if (reg->imgId == mainImgId) {
-            mainImgRegions.push_back(reg);
+    std::vector<ImgRegion*> searchRegions;
+    for (auto it = imgRegions.begin(); it != imgRegions.end(); it++) {
+        ImgRegion* reg = it->second;
+        if (reg->imgId == mainImgId || reg->imgId == HEAP_REG_ID) {
+            searchRegions.push_back(reg);
         }
     }
-    auto positions = searchBytes(bytes, sizeof(bytes), mainImgRegions);
+    auto positions = searchBytes(bytes, sizeof(bytes), searchRegions);
     for (uint64_t pos : positions) {
         printf("pos=0x%lx -> ", pos);
         for (uint64_t i = 0; i < 8; i++) {
@@ -79,7 +84,7 @@ void searchForPyOpcodes()
     }
     if (positions.size() == 0) {
         printf("didn't find a position\n");
-    }*/
+    }
 }
 
 
@@ -95,33 +100,62 @@ uint32_t getImgId(uint64_t addr)
     return 0;
 }
 
+void mallocBefore(ADDRINT size)
+{
+    lastMallocSize = size;
+    //printf("malloc(%lu) -> ", size);
+}
 
-/*void imgMemCallback(IMG img, void *v)
+void mallocAfter(ADDRINT addr)
+{
+    //printf("0x%lx (size was %lu)\n", addr, lastMallocSize);
+    ImgRegion* reg = new ImgRegion();
+    reg->startAddr = addr;
+    reg->endAddr = addr + lastMallocSize - 1;
+    reg->imgId = HEAP_REG_ID;
+    addImgRegion(reg);
+}
+
+void freeBefore(ADDRINT addr)
+{
+    // free(0) is a nop
+    if (addr != 0) {
+        auto it = imgRegions.find(addr);
+        if (it != imgRegions.end()) {
+            //imgRegions.erase(it);
+            //printf("free(0x%lx)\n", addr);
+        }
+        else {
+            // this error is triggered by "python3 prog.py",
+            // (frees twice the same address), wtf ??
+            //panic("catched invalid call to free(0x%lx)\n", addr);
+        }
+    }
+}
+
+void imgMemCallback(IMG img, void *v)
 {
     //  Find malloc()
     RTN mallocRtn = RTN_FindByName(img, "malloc");
     if (RTN_Valid(mallocRtn))
     {
         RTN_Open(mallocRtn);
-        RTN_InsertCall(mallocRtn, IPOINT_BEFORE, (AFUNPTR)MallocBefore,
-                       IARG_ADDRINT, "malloc",
+        RTN_InsertCall(mallocRtn, IPOINT_BEFORE, (AFUNPTR)mallocBefore,
                        IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
                        IARG_END);
-        RTN_InsertCall(mallocRtn, IPOINT_AFTER, (AFUNPTR)MallocAfter,
-                       IARG_FUNCRET_EXITPOINT_VALUE, IARG_END);
+        RTN_InsertCall(mallocRtn, IPOINT_AFTER, (AFUNPTR)mallocAfter,
+                       IARG_FUNCRET_EXITPOINT_VALUE, 
+                       IARG_END);
         RTN_Close(mallocRtn);
     }
-
-    // Find the free() function.
-    RTN freeRtn = RTN_FindByName(img, FREE);
+    // Find free
+    RTN freeRtn = RTN_FindByName(img, "free");
     if (RTN_Valid(freeRtn))
     {
         RTN_Open(freeRtn);
-        // Instrument free() to print the input argument value.
-        RTN_InsertCall(freeRtn, IPOINT_BEFORE, (AFUNPTR)Arg1Before,
-                       IARG_ADDRINT, FREE,
+        RTN_InsertCall(freeRtn, IPOINT_BEFORE, (AFUNPTR)freeBefore,
                        IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
                        IARG_END);
         RTN_Close(freeRtn);
     }
-}*/
+}
