@@ -5,26 +5,14 @@
 
 #include "errors.h"
 #include "cfg.h"
+#include "mem.h"
 #include "pin.H"
-
-class ImgRegion
-{
-public:
-    uint64_t startAddr;
-    uint64_t endAddr;
-    uint32_t imgId;
-};
-
-static std::vector<ImgRegion*> imgRegions;
 
 KNOB< std::string > outputFolderKnob(KNOB_MODE_WRITEONCE, "pintool", "o", "output", "specify output folder name");
 static FILE* codeDumpFile;
 static FILE* cfgDotFile;
 static FILE* imgFile;
 static FILE* memReadFile;
-
-// initialize this to some illegal value (not 0, not a small integer).
-static uint32_t mainImgId = 999999;
 
 static std::map<uint64_t, Instruction*> instrList;
 static std::map<Jump, uint32_t> jumps;
@@ -33,34 +21,7 @@ static uint64_t prevAddr = 0;
 // is the interpreted program (e.g. prog.py) running ? 
 static bool progRunning = false; 
 
-// counts number of reads at each memory address
-static std::map<uint64_t, uint32_t> memReadCount;
 
-
-// returns 0 for an unknown image ID
-uint32_t getImgId(uint64_t addr)
-{
-    for (auto reg : imgRegions) {
-        if (reg->startAddr <= addr && addr <= reg->endAddr) {
-            return reg->imgId;
-        }
-    }
-    return 0;
-}
-
-std::vector<uint64_t> searchBytes(uint8_t* bytes, uint64_t n, const std::vector<ImgRegion*>& regions)
-{
-    std::vector<uint64_t> res;
-    for (ImgRegion* reg : regions) {
-        printf("searching in 0x%lx -> 0x%lx\n", reg->startAddr, reg->endAddr);
-        for (uint64_t addr = reg->startAddr; addr+n-1 <= reg->endAddr; addr++) {
-            if (!memcmp(bytes, (uint8_t*)addr, n)) {
-                res.push_back(addr);
-            }
-        }
-    }
-    return res;
-}
 
 // called each time we execute any instruction
 // (before we actually execute it).
@@ -79,68 +40,20 @@ void recordJump(uint64_t addr)
     prevAddr = addr;
 }
 
-void searchBytecode()
-{
-    uint8_t bytes[] = {
-        0x65, 0x64, 0x64
-    };
-    std::vector<ImgRegion*> mainImgRegions;
-    for (auto reg : imgRegions) {
-        if (reg->imgId == mainImgId) {
-            mainImgRegions.push_back(reg);
-        }
-    }
-    auto positions = searchBytes(bytes, sizeof(bytes), mainImgRegions);
-    for (uint64_t pos : positions) {
-        printf("pos=0x%lx -> ", pos);
-        for (uint64_t i = 0; i < 8; i++) {
-            printf("%x ", *(uint8_t*)(pos + i));
-        }
-        printf("\n");
-    }
-    if (positions.size() == 0) {
-        printf("didn't find a position\n");
-    }
-}
-
-void dumpMemReads()
-{
-    // print areas of memory we accessed a lot 
-    uint32_t memThreshold = 5000;
-    
-    uint64_t prevBigRead = 0;
-    for (auto it = memReadCount.begin(); it != memReadCount.end(); it++) {
-        uint64_t addr = it->first;
-        uint32_t count = it->second;
-        if (count >= memThreshold) {
-            if (addr != prevBigRead + 1) {
-                fprintf(memReadFile, "\n");
-            }
-            fprintf(memReadFile, "0x%lx: [%u] %x\n", addr, count, *(uint8_t*)addr);
-            prevBigRead = addr;
-        }
-    }
-}
 
 void syscallEntry(ADDRINT scNum, ADDRINT arg0, ADDRINT arg1, ADDRINT arg2,
     ADDRINT arg3, ADDRINT arg4, ADDRINT arg5)
 {
     if (scNum == SYS_openat && !strcmp((char*)arg1, "tototo")) {
         progRunning = true;
-        searchBytecode();
+        searchForPyOpcodes();
     }
     if (scNum == SYS_openat && !strcmp((char*)arg1, "tototo_after")) {
         progRunning = false;
-        dumpMemReads();
+        dumpMemReads(memReadFile);
     }
 }
 
-void recordMemoryRead(ADDRINT addr, UINT32 size, void* v)
-{
-    for (uint32_t i = 0; i < size; i++) {
-        memReadCount[addr + i]++;
-    }
-}
 
 
 // called by PIN each time we encounter an instruction for 
@@ -149,7 +62,7 @@ void recordMemoryRead(ADDRINT addr, UINT32 size, void* v)
 // and can call it for an instruction that will never be executed.
 // WEIRDLIER, I have to call INS_InsertCall() each time this function is 
 // executed on a given instruction, not just the first time.
-void insPinCallback(INS ins, void* v)
+void insCallback(INS ins, void* v)
 {
     if (INS_IsNop(ins)) {
         return;
@@ -258,7 +171,7 @@ void dumpCFG()
 // called by PIN at the end of the program.
 // we can't write to stdout here since stdout might
 // have been closed.
-void finiPinCallback(int code, void* v)
+void finiCallback(int code, void* v)
 {
     removeDeadInstrs();
     dumpInstrList();
@@ -279,7 +192,7 @@ void imgLoadCallback(IMG img, void* v)
         reg->startAddr = IMG_RegionLowAddress(img, i);
         reg->endAddr = IMG_RegionHighAddress(img, i);
         reg->imgId = IMG_Id(img);
-        imgRegions.push_back(reg);
+        addImgRegion(reg);
         fprintf(imgFile, "\tregion 0x%lx -> 0x%lx\n", reg->startAddr, reg->endAddr);
     }
     if (IMG_IsMainExecutable(img)) {
@@ -313,10 +226,11 @@ int main(int argc, char* argv[])
     memReadFile = fopen((outputFolder + "mem_reads").c_str(), "w");
     
     // add PIN callbacks
-    INS_AddInstrumentFunction(insPinCallback, 0);
+    INS_AddInstrumentFunction(insCallback, 0);
+    //IMG_AddInstrumentFunction(imgMemCallback, 0);
     IMG_AddInstrumentFunction(imgLoadCallback, 0);
     IMG_AddUnloadFunction(imgUnloadCallback, 0);
-    PIN_AddFiniFunction(finiPinCallback, 0);
+    PIN_AddFiniFunction(finiCallback, 0);
     
     PIN_StartProgram();
     return -1;

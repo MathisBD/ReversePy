@@ -1,5 +1,7 @@
 
-PIN_ROOT=$(CURDIR)/../pin-3.19-98425-gd666b2bee-gcc-linux
+ifndef PIN_ROOT 
+	PIN_ROOT=$(CURDIR)/../pin-3.19-98425-gd666b2bee-gcc-linux
+endif
 OUTPUT_DIR=$(CURDIR)/output
 TOOL=obj-intel64/tool.so
 
@@ -18,3 +20,4 @@ clean:
 	rm -f -r ./obj-intel64
 	rm -f -r $(OUTPUT_DIR)
 	rm -f ./pin.log ./pintool.log
+	rm -f tototo tototo_after
