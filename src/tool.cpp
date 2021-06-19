@@ -13,6 +13,7 @@ static FILE* codeDumpFile;
 static FILE* cfgDotFile;
 static FILE* imgFile;
 static FILE* memReadFile;
+static FILE* traceDumpFile;
 
 static std::map<uint64_t, Instruction*> instrList;
 static std::map<Jump, uint32_t> jumps;
@@ -22,24 +23,46 @@ static uint64_t prevAddr = 0;
 static bool progRunning = false; 
 
 
-
 // called each time we execute any instruction
 // (before we actually execute it).
 void increaseExecCount(Instruction* instr) 
 {
-    //fprintf(addrDumpFile, "0x%lx: <%u> %s\n",
-    //    instr->addr, getImgId(instr->addr), instr->disassembly.c_str());
-    (instr->execCount)++;
+    if (progRunning) {
+        (instr->execCount)++;
+    }
+}
+
+void dumpTrace(ADDRINT addr, char* dis)
+{
+    if (progRunning) {
+        fprintf(traceDumpFile, "0x%lx: %s\n", addr, dis);
+    }
+}
+
+void dumpTraceCall(ADDRINT addr, char* dis, ADDRINT targetAddr)
+{
+    if (progRunning) {
+        fprintf(traceDumpFile, "0x%lx: %s (target=0x%lx, imgId = %u)\n", 
+            addr, dis, targetAddr, getImgId(targetAddr));
+    }
 }
 
 // called each time we execute a selected instruction
 // (before we actually execute it).
 void recordJump(uint64_t addr)
 {
-    jumps[Jump(prevAddr, addr)]++;
-    prevAddr = addr;
+    if (progRunning) {
+        jumps[Jump(prevAddr, addr)]++;
+        prevAddr = addr;
+    }
 }
 
+void recordMemRead(ADDRINT addr, UINT32 size)
+{
+    if (progRunning) {
+        increaseReadCount((uint64_t)addr, (uint64_t)size);
+    }
+}
 
 void syscallEntry(ADDRINT scNum, ADDRINT arg0, ADDRINT arg1, ADDRINT arg2,
     ADDRINT arg3, ADDRINT arg4, ADDRINT arg5)
@@ -79,10 +102,6 @@ void insCallback(INS ins, void* v)
             IARG_SYSARG_VALUE, 5,
             IARG_END);
     }
-    // only do the rest if the program is running
-    if (!progRunning) {
-        return;
-    }
     Instruction* instr;
     auto it = instrList.find(INS_Address(ins));
     if (it == instrList.end()) {
@@ -98,11 +117,28 @@ void insCallback(INS ins, void* v)
         instr = it->second;
     }
     // I have to call this every time, not only if we just created instr.
-    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)increaseExecCount, IARG_PTR, instr, IARG_END);
+    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)increaseExecCount, 
+        IARG_PTR, instr, 
+        IARG_END);
+    // dump execution trace
+    if (INS_IsDirectCall(ins)) {
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)dumpTraceCall, 
+        IARG_ADDRINT, instr->addr, 
+        IARG_PTR, instr->disassembly.c_str(),
+        IARG_BRANCH_TARGET_ADDR,
+        IARG_END);
+    }
+    else {
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)dumpTrace, 
+        IARG_ADDRINT, instr->addr, 
+        IARG_PTR, instr->disassembly.c_str(),
+        IARG_END);
+    }
+    
     if (getImgId(instr->addr) == mainImgId) {
         // record jumps
         INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)recordJump,
-            IARG_UINT64, instr->addr, 
+            IARG_UINT64, instr->addr,
             IARG_END);
         // record memory reads
         uint32_t memOpCount = INS_MemoryOperandCount(ins);
@@ -111,7 +147,7 @@ void insCallback(INS ins, void* v)
                 // predicated means the function is not called
                 // if the predicate (e.g. for movcc) is false.
                 INS_InsertPredicatedCall(
-                    ins, IPOINT_BEFORE, (AFUNPTR)recordMemoryRead,
+                    ins, IPOINT_BEFORE, (AFUNPTR)recordMemRead,
                     IARG_MEMORYOP_EA, memOp, 
                     IARG_MEMORYREAD_SIZE,
                     IARG_END);
@@ -161,7 +197,7 @@ void dumpCFG()
     cfg->filterBBs(9000, 4000);
     // exec counts now don't mean anything
     cfg->checkIntegrity(false);
-    //cfg->mergeBlocks();
+    cfg->mergeBlocks();
     cfg->checkIntegrity(false);
     cfg->writeDotGraph(cfgDotFile);
 
@@ -182,6 +218,7 @@ void finiCallback(int code, void* v)
     fclose(imgFile);
     fclose(cfgDotFile);
     fclose(memReadFile);
+    fclose(traceDumpFile);
 }
 
 void imgLoadCallback(IMG img, void* v)
@@ -224,7 +261,8 @@ int main(int argc, char* argv[])
     imgFile = fopen((outputFolder + "img_loading").c_str(), "w");
     cfgDotFile = fopen((outputFolder + "cfg.dot").c_str(), "w");
     memReadFile = fopen((outputFolder + "mem_reads").c_str(), "w");
-    
+    traceDumpFile = fopen((outputFolder + "traceDump").c_str(), "w");
+
     // add PIN callbacks
     INS_AddInstrumentFunction(insCallback, 0);
     IMG_AddInstrumentFunction(imgMemCallback, 0);

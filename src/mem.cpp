@@ -19,9 +19,9 @@ static uint64_t lastMallocSize;
 static uint64_t lastCallocSize;
 static uint64_t lastReallocSize;
 
-void recordMemoryRead(ADDRINT addr, UINT32 size, void* v)
+void increaseReadCount(uint64_t addr, uint64_t size)
 {
-    for (uint32_t i = 0; i < size; i++) {
+    for (uint64_t i = 0; i < size; i++) {
         memReadCount[addr + i]++;
     }
 }
@@ -67,7 +67,7 @@ std::vector<uint64_t> searchBytes(uint8_t* bytes, uint64_t n, const std::vector<
 void searchForPyOpcodes()
 {
     uint8_t bytes[] = {
-        0x02, 0x83, 0x01, 0x5a
+        0x64, 0x03, 0x65, 0x03
     };
     std::vector<ImgRegion*> searchRegions;
     for (auto it = imgRegions.begin(); it != imgRegions.end(); it++) {
@@ -105,12 +105,10 @@ uint32_t getImgId(uint64_t addr)
 void mallocBefore(ADDRINT size)
 {
     lastMallocSize = size;
-    //printf("malloc(%lu) -> ", size);
 }
 
 void mallocAfter(ADDRINT addr)
 {
-    //printf("0x%lx (size was %lu)\n", addr, lastMallocSize);
     ImgRegion* reg = new ImgRegion();
     reg->startAddr = addr;
     reg->endAddr = addr + lastMallocSize - 1;
@@ -137,7 +135,7 @@ void reallocBefore(ADDRINT addr, ADDRINT size)
     if (addr != 0) {
         auto it = imgRegions.find(addr);
         if (it != imgRegions.end()) {
-            //imgRegions.erase(it);
+            imgRegions.erase(it);
         }
         else {
             printf("catched invalid call to realloc(0x%lx, ...)\n", addr);
@@ -161,12 +159,9 @@ void freeBefore(ADDRINT addr)
     if (addr != 0) {
         auto it = imgRegions.find(addr);
         if (it != imgRegions.end()) {
-            //imgRegions.erase(it);
-            //printf("\tfree(0x%lx)\n", addr);
+            imgRegions.erase(it);
         }
         else {
-            // this error is triggered by "python3 prog.py",
-            // (frees twice the same address), wtf ??
             printf("catched invalid call to free(0x%lx)\n", addr);
         }
     }

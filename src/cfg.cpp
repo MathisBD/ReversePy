@@ -152,7 +152,8 @@ void CFG::resetDfsStates()
 
 void CFG::writeDotGraph(FILE* file)
 {
-    uint32_t maxBBSize = 10;
+    // dotty crashes if node labels are too long
+    uint32_t maxBBSize = 20;
 
     fprintf(file, "digraph {\n");
     fprintf(file, "\tsplines=ortho\n");
