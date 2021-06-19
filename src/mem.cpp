@@ -14,8 +14,10 @@ static std::map<uint64_t, ImgRegion*> imgRegions;
 // counts the number of reads at each memory address
 static std::map<uint64_t, uint32_t> memReadCount;
 
-// the argument passed to the last call to malloc()
+// the argument passed to the last call to malloc(), calloc() or realloc()
 static uint64_t lastMallocSize;
+static uint64_t lastCallocSize;
+static uint64_t lastReallocSize;
 
 void recordMemoryRead(ADDRINT addr, UINT32 size, void* v)
 {
@@ -42,7 +44,7 @@ void dumpMemReads(FILE* file)
             if (addr != prevBigRead + 1) {
                 fprintf(file, "\n");
             }
-            fprintf(file, "0x%lx: [%u] %x\n", addr, count, *(uint8_t*)addr);
+            fprintf(file, "0x%lx: [%u] 0x%x\n", addr, count, *((uint8_t*)addr));
             prevBigRead = addr;
         }
     }
@@ -65,7 +67,7 @@ std::vector<uint64_t> searchBytes(uint8_t* bytes, uint64_t n, const std::vector<
 void searchForPyOpcodes()
 {
     uint8_t bytes[] = {
-        0x64, 0x00, 0x64, 0x01
+        0x02, 0x83, 0x01, 0x5a
     };
     std::vector<ImgRegion*> searchRegions;
     for (auto it = imgRegions.begin(); it != imgRegions.end(); it++) {
@@ -116,6 +118,43 @@ void mallocAfter(ADDRINT addr)
     addImgRegion(reg);
 }
 
+void callocBefore(ADDRINT n, ADDRINT size)
+{
+    lastCallocSize = n * size;
+}
+
+void callocAfter(ADDRINT addr)
+{
+    ImgRegion* reg = new ImgRegion();
+    reg->startAddr = addr;
+    reg->endAddr = addr + lastCallocSize - 1;
+    reg->imgId = HEAP_REG_ID;
+    addImgRegion(reg);
+}
+
+void reallocBefore(ADDRINT addr, ADDRINT size)
+{
+    if (addr != 0) {
+        auto it = imgRegions.find(addr);
+        if (it != imgRegions.end()) {
+            //imgRegions.erase(it);
+        }
+        else {
+            printf("catched invalid call to realloc(0x%lx, ...)\n", addr);
+        }
+    }
+    lastReallocSize = size;
+}
+
+void reallocAfter(ADDRINT addr)
+{
+    ImgRegion* reg = new ImgRegion();
+    reg->startAddr = addr;
+    reg->endAddr = addr + lastReallocSize - 1;
+    reg->imgId = HEAP_REG_ID;
+    addImgRegion(reg);
+}
+
 void freeBefore(ADDRINT addr)
 {
     // free(0) is a nop
@@ -123,12 +162,12 @@ void freeBefore(ADDRINT addr)
         auto it = imgRegions.find(addr);
         if (it != imgRegions.end()) {
             //imgRegions.erase(it);
-            //printf("free(0x%lx)\n", addr);
+            //printf("\tfree(0x%lx)\n", addr);
         }
         else {
             // this error is triggered by "python3 prog.py",
             // (frees twice the same address), wtf ??
-            //panic("catched invalid call to free(0x%lx)\n", addr);
+            printf("catched invalid call to free(0x%lx)\n", addr);
         }
     }
 }
@@ -148,7 +187,35 @@ void imgMemCallback(IMG img, void *v)
                        IARG_END);
         RTN_Close(mallocRtn);
     }
-    // Find free
+    //  Find calloc()
+    RTN callocRtn = RTN_FindByName(img, "calloc");
+    if (RTN_Valid(callocRtn))
+    {
+        RTN_Open(callocRtn);
+        RTN_InsertCall(callocRtn, IPOINT_BEFORE, (AFUNPTR)callocBefore,
+                       IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                       IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
+                       IARG_END);
+        RTN_InsertCall(callocRtn, IPOINT_AFTER, (AFUNPTR)callocAfter,
+                       IARG_FUNCRET_EXITPOINT_VALUE, 
+                       IARG_END);
+        RTN_Close(callocRtn);
+    }
+    //  Find realloc()
+    RTN reallocRtn = RTN_FindByName(img, "realloc");
+    if (RTN_Valid(reallocRtn))
+    {
+        RTN_Open(reallocRtn);
+        RTN_InsertCall(reallocRtn, IPOINT_BEFORE, (AFUNPTR)reallocBefore,
+                       IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                       IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
+                       IARG_END);
+        RTN_InsertCall(reallocRtn, IPOINT_AFTER, (AFUNPTR)reallocAfter,
+                       IARG_FUNCRET_EXITPOINT_VALUE, 
+                       IARG_END);
+        RTN_Close(reallocRtn);
+    }
+    // Find free()
     RTN freeRtn = RTN_FindByName(img, "free");
     if (RTN_Valid(freeRtn))
     {
