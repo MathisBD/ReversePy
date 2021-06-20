@@ -18,11 +18,19 @@ static std::map<uint64_t, uint32_t> memReadCount;
 static uint64_t lastMallocSize;
 static uint64_t lastCallocSize;
 static uint64_t lastReallocSize;
+static uint64_t lastMmapSize;
 
-void increaseReadCount(uint64_t addr, uint64_t size)
+static bool foundBytecode = false;
+static uint64_t bytecodeStart;
+static uint64_t bytecodeEnd;
+
+void increaseReadCount(Instruction* instr, uint64_t memAddr, uint64_t memSize)
 {
-    for (uint64_t i = 0; i < size; i++) {
-        memReadCount[addr + i]++;
+    for (uint64_t i = 0; i < memSize; i++) {
+        memReadCount[memAddr + i]++;
+    }
+    if (foundBytecode && bytecodeStart <= memAddr && memAddr <= bytecodeEnd) {
+        instr->bytecodeReadCount++;
     }
 }
 
@@ -44,7 +52,7 @@ void dumpMemReads(FILE* file)
             if (addr != prevBigRead + 1) {
                 fprintf(file, "\n");
             }
-            fprintf(file, "0x%lx: [%u] 0x%x\n", addr, count, *((uint8_t*)addr));
+            fprintf(file, "0x%lx(reg=%u): [%u] 0x%x\n", addr, getImgId(addr), count, *((uint8_t*)addr));
             prevBigRead = addr;
         }
     }
@@ -66,9 +74,6 @@ std::vector<uint64_t> searchBytes(uint8_t* bytes, uint64_t n, const std::vector<
 
 void searchForPyOpcodes()
 {
-    uint8_t bytes[] = {
-        0x64, 0x03, 0x65, 0x03
-    };
     std::vector<ImgRegion*> searchRegions;
     for (auto it = imgRegions.begin(); it != imgRegions.end(); it++) {
         ImgRegion* reg = it->second;
@@ -76,16 +81,24 @@ void searchForPyOpcodes()
             searchRegions.push_back(reg);
         }
     }
-    auto positions = searchBytes(bytes, sizeof(bytes), searchRegions);
+    uint8_t startBytes[] = {
+        0x65, 0x00, 0x64, 0x00, 0x64, 0x01, 0x83, 0x02
+    };
+    printf("[+] Starting opcode search\n");
+    auto positions = searchBytes(startBytes, sizeof(startBytes), searchRegions);
     for (uint64_t pos : positions) {
-        printf("pos=0x%lx -> ", pos);
-        for (uint64_t i = 0; i < 8; i++) {
+        printf("\t0x%lx: ", pos);
+        for (uint64_t i = 0; i < 16; i++) {
             printf("%x ", *(uint8_t*)(pos + i));
         }
         printf("\n");
     }
-    if (positions.size() == 0) {
-        printf("didn't find a position\n");
+    printf("\tfinished opcode search\n");
+
+    if (positions.size() == 1) {
+        bytecodeStart = positions[0];
+        bytecodeEnd = bytecodeStart + 50; // arbitrary number (for now)
+        foundBytecode = true;
     }
 }
 
@@ -138,7 +151,7 @@ void reallocBefore(ADDRINT addr, ADDRINT size)
             imgRegions.erase(it);
         }
         else {
-            printf("catched invalid call to realloc(0x%lx, ...)\n", addr);
+            printf("[-] Catched invalid call to realloc(0x%lx, ...)\n", addr);
         }
     }
     lastReallocSize = size;
@@ -162,9 +175,24 @@ void freeBefore(ADDRINT addr)
             imgRegions.erase(it);
         }
         else {
-            printf("catched invalid call to free(0x%lx)\n", addr);
+            printf("[-] Catched invalid call to free(0x%lx)\n", addr);
         }
     }
+}
+
+void mmapBefore(ADDRINT addr, ADDRINT size, ADDRINT prot, ADDRINT flags, ADDRINT fd, ADDRINT offset)
+{
+    lastMmapSize = size;
+}
+
+void mmapAfter(ADDRINT addr)
+{
+    // treat mmaped pages as heap space
+    ImgRegion* reg = new ImgRegion();
+    reg->startAddr = addr;
+    reg->endAddr = addr + lastMmapSize - 1;
+    reg->imgId = HEAP_REG_ID;
+    addImgRegion(reg);
 }
 
 void imgMemCallback(IMG img, void *v)
@@ -219,5 +247,23 @@ void imgMemCallback(IMG img, void *v)
                        IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
                        IARG_END);
         RTN_Close(freeRtn);
+    }
+    // Find mmap()
+    RTN mmapRtn = RTN_FindByName(img, "mmap");
+    if (RTN_Valid(mmapRtn))
+    {
+        RTN_Open(mmapRtn);
+        RTN_InsertCall(mmapRtn, IPOINT_BEFORE, (AFUNPTR)mmapBefore,
+                       IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                       IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
+                       IARG_FUNCARG_ENTRYPOINT_VALUE, 2,
+                       IARG_FUNCARG_ENTRYPOINT_VALUE, 3,
+                       IARG_FUNCARG_ENTRYPOINT_VALUE, 4,
+                       IARG_FUNCARG_ENTRYPOINT_VALUE, 5,
+                       IARG_END);
+        RTN_InsertCall(mmapRtn, IPOINT_AFTER, (AFUNPTR)mmapAfter,
+                       IARG_FUNCRET_EXITPOINT_VALUE, 
+                       IARG_END);
+        RTN_Close(mmapRtn);
     }
 }

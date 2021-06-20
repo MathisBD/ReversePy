@@ -1,3 +1,5 @@
+#pragma once
+
 #include <stdint.h>
 #include <string>
 #include <vector>
@@ -15,6 +17,7 @@ public:
     uint64_t addr;
     uint32_t size;
     uint32_t execCount;
+    uint32_t bytecodeReadCount;
     std::string disassembly;
 };
 

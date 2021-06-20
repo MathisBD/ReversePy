@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include "pin.H"
+#include "cfg.h"
 
 class ImgRegion
 {
@@ -14,7 +15,7 @@ public:
 extern uint32_t mainImgId;
 
 uint32_t getImgId(uint64_t addr);
-void increaseReadCount(uint64_t addr, uint64_t size);
+void increaseReadCount(Instruction* instr, uint64_t memAddr, uint64_t memSize);
 void dumpMemReads(FILE* file);
 void addImgRegion(ImgRegion* reg);
 void searchForPyOpcodes();

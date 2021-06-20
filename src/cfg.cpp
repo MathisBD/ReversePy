@@ -152,18 +152,25 @@ void CFG::resetDfsStates()
 
 void CFG::writeDotGraph(FILE* file)
 {
-    // dotty crashes if node labels are too long
-    uint32_t maxBBSize = 20;
+    // dotty crashes if node labels are too long (it detects a stack smashing - 
+    // labels must be read into a stack allocated buffer without checking for size lol)
+    uint32_t maxBBSize = 100;
 
     fprintf(file, "digraph {\n");
     fprintf(file, "\tsplines=ortho\n");
     fprintf(file, "\tnode[ shape=box ]\n");
 
     for (auto bb : bbVect) {
-        // use the bb address as a unique identifier
+        // use the bb struct address as a unique identifier
         fprintf(file, "\t%lu[ label=\"", (uint64_t)bb);
         for (uint32_t i = 0; i < bb->instrs.size(); i++) {
-            if (i < (maxBBSize/2) || i >= bb->instrs.size() - (maxBBSize/2)) {
+            if (i < (maxBBSize/2) || i >= bb->instrs.size() - (maxBBSize/2) || bb->instrs[i]->bytecodeReadCount > 0) {
+                if (bb->instrs[i]->bytecodeReadCount > 0) {
+                    fprintf(file, ">>>%u>>>  ", bb->instrs[i]->bytecodeReadCount);
+                }
+                else {
+                    fprintf(file, "   ");
+                }
                 fprintf(file, "0x%lx: [%u] %s\\l", bb->instrs[i]->addr, 
                     bb->instrs[i]->execCount, bb->instrs[i]->disassembly.c_str());
             }

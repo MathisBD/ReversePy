@@ -57,10 +57,10 @@ void recordJump(uint64_t addr)
     }
 }
 
-void recordMemRead(ADDRINT addr, UINT32 size)
+void recordMemRead(Instruction* instr, ADDRINT memAddr, UINT32 memSize)
 {
     if (progRunning) {
-        increaseReadCount((uint64_t)addr, (uint64_t)size);
+        increaseReadCount(instr, (uint64_t)memAddr, (uint64_t)memSize);
     }
 }
 
@@ -109,6 +109,7 @@ void insCallback(INS ins, void* v)
         instr->addr = INS_Address(ins);
         instr->size = INS_Size(ins);
         instr->execCount = 0;
+        instr->bytecodeReadCount = 0;
         instr->disassembly = INS_Disassemble(ins);    
         // save a pointer to the instruction
         instrList[instr->addr] = instr;
@@ -148,6 +149,7 @@ void insCallback(INS ins, void* v)
                 // if the predicate (e.g. for movcc) is false.
                 INS_InsertPredicatedCall(
                     ins, IPOINT_BEFORE, (AFUNPTR)recordMemRead,
+                    IARG_PTR, instr,
                     IARG_MEMORYOP_EA, memOp, 
                     IARG_MEMORYREAD_SIZE,
                     IARG_END);
