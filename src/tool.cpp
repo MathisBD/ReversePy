@@ -19,6 +19,9 @@ static std::map<uint64_t, Instruction*> instrList;
 static std::map<Jump, uint32_t> jumps;
 static uint64_t prevAddr = 0;
 
+// a stack of addresses (of call instructions)
+static std::vector<uint64_t> callStack;
+
 // is the interpreted program (e.g. prog.py) running ? 
 static bool progRunning = false; 
 
@@ -32,14 +35,15 @@ void increaseExecCount(Instruction* instr)
     }
 }
 
-void dumpTrace(ADDRINT addr, char* dis)
+// non-branching instructions
+void dumpTraceRegular(ADDRINT addr, char* dis)
 {
     if (progRunning) {
         fprintf(traceDumpFile, "0x%lx: %s\n", addr, dis);
     }
 }
 
-void dumpTraceCall(ADDRINT addr, char* dis, ADDRINT targetAddr)
+void dumpTraceBranch(ADDRINT addr, char* dis, ADDRINT targetAddr)
 {
     if (progRunning) {
         fprintf(traceDumpFile, "0x%lx: %s (target=0x%lx, imgId = %u)\n", 
@@ -47,10 +51,36 @@ void dumpTraceCall(ADDRINT addr, char* dis, ADDRINT targetAddr)
     }
 }
 
-// called each time we execute a selected instruction
+// called each time we execute an instruction
 // (before we actually execute it).
-void recordJump(uint64_t addr)
+void recordJump(ADDRINT addr, BOOL isCall, BOOL isRet)
 {
+    /*// call
+    if (isCall) {
+        callStack.push_back(addr);
+        if (progRunning) {
+            jumps[Jump(prevAddr, addr)]++;
+            prevAddr = addr;
+        }
+    }
+    // return
+    else if (isRet) {
+        uint64_t callAddr = callStack.back();
+        callStack.pop_back();
+        if (progRunning) {
+            jumps[Jump(prevAddr, addr)]++;
+            // we want the next arrow to be callAddr->nextAddr,
+            // not addr->nextAddr
+            prevAddr = callAddr;
+        }
+    }
+    // other
+    else {
+        if (progRunning) {
+            jumps[Jump(prevAddr, addr)]++;
+            prevAddr = addr;
+        }
+    }*/
     if (progRunning) {
         jumps[Jump(prevAddr, addr)]++;
         prevAddr = addr;
@@ -122,25 +152,26 @@ void insCallback(INS ins, void* v)
         IARG_PTR, instr, 
         IARG_END);
     // dump execution trace
-    if (INS_IsDirectCall(ins)) {
-        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)dumpTraceCall, 
+    if (INS_IsBranch(ins)) {
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)dumpTraceBranch, 
         IARG_ADDRINT, instr->addr, 
         IARG_PTR, instr->disassembly.c_str(),
         IARG_BRANCH_TARGET_ADDR,
         IARG_END);
     }
     else {
-        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)dumpTrace, 
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)dumpTraceRegular, 
         IARG_ADDRINT, instr->addr, 
         IARG_PTR, instr->disassembly.c_str(),
         IARG_END);
     }
-    
     if (getImgId(instr->addr) == mainImgId) {
         // record jumps
         INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)recordJump,
             IARG_UINT64, instr->addr,
-            IARG_END);
+            IARG_BOOL, INS_IsCall(ins),
+            IARG_BOOL, INS_IsRet(ins),
+            IARG_END); 
         // record memory reads
         uint32_t memOpCount = INS_MemoryOperandCount(ins);
         for (uint32_t memOp = 0; memOp < memOpCount; memOp++) {
