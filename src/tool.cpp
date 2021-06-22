@@ -8,6 +8,13 @@
 #include "mem.h"
 #include "pin.H"
 
+class InstrTrace
+{
+public:
+    uint64_t addr;
+    InstrTrace(uint64_t addr_) : addr(addr_) {};
+};
+
 KNOB< std::string > outputFolderKnob(KNOB_MODE_WRITEONCE, "pintool", "o", "output", "specify output folder name");
 static FILE* codeDumpFile;
 static FILE* cfgDotFile;
@@ -18,13 +25,10 @@ static FILE* traceDumpFile;
 static std::map<uint64_t, Instruction*> instrList;
 static std::map<Jump, uint32_t> jumps;
 static uint64_t prevAddr = 0;
-
-// a stack of addresses (of call instructions)
-static std::vector<uint64_t> callStack;
-
 // is the interpreted program (e.g. prog.py) running ? 
 static bool progRunning = false; 
 
+static std::vector<InstrTrace> instrTrace;
 
 // called each time we execute any instruction
 // (before we actually execute it).
@@ -35,19 +39,10 @@ void increaseExecCount(Instruction* instr)
     }
 }
 
-// non-branching instructions
-void dumpTraceRegular(ADDRINT addr, char* dis)
+void recordTrace(ADDRINT addr)
 {
     if (progRunning) {
-        fprintf(traceDumpFile, "0x%lx: %s\n", addr, dis);
-    }
-}
-
-void dumpTraceBranch(ADDRINT addr, char* dis, ADDRINT targetAddr)
-{
-    if (progRunning) {
-        fprintf(traceDumpFile, "0x%lx: %s (target=0x%lx, imgId = %u)\n", 
-            addr, dis, targetAddr, getImgId(targetAddr));
+        instrTrace.emplace_back((uint64_t)addr);
     }
 }
 
@@ -55,32 +50,6 @@ void dumpTraceBranch(ADDRINT addr, char* dis, ADDRINT targetAddr)
 // (before we actually execute it).
 void recordJump(ADDRINT addr, BOOL isCall, BOOL isRet)
 {
-    /*// call
-    if (isCall) {
-        callStack.push_back(addr);
-        if (progRunning) {
-            jumps[Jump(prevAddr, addr)]++;
-            prevAddr = addr;
-        }
-    }
-    // return
-    else if (isRet) {
-        uint64_t callAddr = callStack.back();
-        callStack.pop_back();
-        if (progRunning) {
-            jumps[Jump(prevAddr, addr)]++;
-            // we want the next arrow to be callAddr->nextAddr,
-            // not addr->nextAddr
-            prevAddr = callAddr;
-        }
-    }
-    // other
-    else {
-        if (progRunning) {
-            jumps[Jump(prevAddr, addr)]++;
-            prevAddr = addr;
-        }
-    }*/
     if (progRunning) {
         jumps[Jump(prevAddr, addr)]++;
         prevAddr = addr;
@@ -97,16 +66,12 @@ void recordMemRead(Instruction* instr, ADDRINT memAddr, UINT32 memSize)
 void syscallEntry(ADDRINT scNum, ADDRINT arg0, ADDRINT arg1, ADDRINT arg2,
     ADDRINT arg3, ADDRINT arg4, ADDRINT arg5)
 {
-    if (scNum == SYS_openat && !strcmp((char*)arg1, "tototo")) {
+    if (scNum == SYS_openat && !strcmp((char*)arg1, "prog.py")) {
         progRunning = true;
-        searchForPyOpcodes();
-    }
-    if (scNum == SYS_openat && !strcmp((char*)arg1, "tototo_after")) {
-        progRunning = false;
-        dumpMemReads(memReadFile);
+        printf("[+] Opened file prog.py\n");
+        //searchForPyOpcodes();
     }
 }
-
 
 
 // called by PIN each time we encounter an instruction for 
@@ -138,6 +103,7 @@ void insCallback(INS ins, void* v)
         instr = new Instruction();
         instr->addr = INS_Address(ins);
         instr->size = INS_Size(ins);
+        instr->opcode = INS_Opcode(ins);
         instr->execCount = 0;
         instr->bytecodeReadCount = 0;
         instr->disassembly = INS_Disassemble(ins);    
@@ -147,24 +113,14 @@ void insCallback(INS ins, void* v)
     else {
         instr = it->second;
     }
-    // I have to call this every time, not only if we just created instr.
+    // I have to call these InsertCall() every time, not only if we just created instr.
     INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)increaseExecCount, 
         IARG_PTR, instr, 
         IARG_END);
     // dump execution trace
-    if (INS_IsBranch(ins)) {
-        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)dumpTraceBranch, 
-        IARG_ADDRINT, instr->addr, 
-        IARG_PTR, instr->disassembly.c_str(),
-        IARG_BRANCH_TARGET_ADDR,
+    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)recordTrace, 
+        IARG_ADDRINT, instr->addr,
         IARG_END);
-    }
-    else {
-        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)dumpTraceRegular, 
-        IARG_ADDRINT, instr->addr, 
-        IARG_PTR, instr->disassembly.c_str(),
-        IARG_END);
-    }
     if (getImgId(instr->addr) == mainImgId) {
         // record jumps
         INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)recordJump,
@@ -207,14 +163,33 @@ void dumpInstrList()
     for (auto it = instrList.begin(); it != instrList.end(); it++) {
         Instruction* instr = it->second;
         if (getImgId(instr->addr) == mainImgId) {
+            if (instr->bytecodeReadCount > 0) {
+                fprintf(codeDumpFile, ">>>%u>>> ", instr->bytecodeReadCount);
+            }
             fprintf(codeDumpFile, "0x%lx: [%u] %s\n", 
                 instr->addr, instr->execCount, instr->disassembly.c_str());
         }
     }
 }
 
+void dumpTrace()
+{
+    for (auto trace : instrTrace) {
+        fprintf(traceDumpFile, "0x%lx\n", trace.addr);
+    }
+}
 
-void dumpCFG()
+bool isPossibleFetch(BasicBlock* bb)
+{
+    for (auto instr : bb->instrs) {
+        if (instr->opcode == XED_ICLASS_MOVZX) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::vector<Instruction*> getFetch()
 {
     // get the CFG of the main image's code
     std::vector<Instruction*> cfgInstrVect;
@@ -227,14 +202,32 @@ void dumpCFG()
     cfg->checkIntegrity(false);
     cfg->mergeBlocks();
     cfg->checkIntegrity(false);
-    cfg->filterBBs(9000, 4000);
-    // exec counts now don't mean anything
+    // the fetch will be executed a lot
+    cfg->filterBBs(9000, 400);
     cfg->checkIntegrity(false);
-    cfg->mergeBlocks();
-    cfg->checkIntegrity(false);
+    //cfg->mergeBlocks();
+    //cfg->checkIntegrity(false);
     cfg->writeDotGraph(cfgDotFile);
 
-    fprintf(codeDumpFile, "Basic block count : %lu\n", cfg->getBasicBlocks().size());
+    std::vector<std::vector<Instruction*>> fetchBBs;
+    for (auto bb : cfg->getBasicBlocks()) {
+        if (isPossibleFetch(bb)) {
+            fetchBBs.push_back(bb->instrs);
+        }
+    }
+    printf("[+] Possible fetches :\n");
+    for (auto bb : fetchBBs) {
+        printf("\t<<\n");
+        for (auto instr : bb) {
+            printf("\t0x%lx: %s (%u)\n", instr->addr, instr->disassembly.c_str(), instr->opcode);
+        }
+        printf("\t>>\n");
+    }
+    if (fetchBBs.size() == 1) {
+        return fetchBBs[0];
+    }
+    panic("Didn't find the python bytecode fetch.");
+    return std::vector<Instruction*>();
 }
 
 // called by PIN at the end of the program.
@@ -244,8 +237,12 @@ void finiCallback(int code, void* v)
 {
     removeDeadInstrs();
     dumpInstrList();
-    dumpCFG();
-   
+    dumpMemReads(memReadFile);
+    dumpTrace();
+
+    // get the fetch
+    auto fetch = getFetch();
+
     // close the log files
     fclose(codeDumpFile);
     fclose(imgFile);
@@ -298,7 +295,7 @@ int main(int argc, char* argv[])
 
     // add PIN callbacks
     INS_AddInstrumentFunction(insCallback, 0);
-    IMG_AddInstrumentFunction(imgMemCallback, 0);
+    //IMG_AddInstrumentFunction(imgMemCallback, 0);
     IMG_AddInstrumentFunction(imgLoadCallback, 0);
     IMG_AddUnloadFunction(imgUnloadCallback, 0);
     PIN_AddFiniFunction(finiCallback, 0);

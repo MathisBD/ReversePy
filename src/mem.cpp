@@ -42,7 +42,7 @@ void addImgRegion(ImgRegion* reg)
 void dumpMemReads(FILE* file)
 {
     // print areas of memory we accessed a lot 
-    uint32_t memThreshold = 5000;
+    uint32_t memThreshold = 500;
     
     uint64_t prevBigRead = 0;
     for (auto it = memReadCount.begin(); it != memReadCount.end(); it++) {
@@ -88,14 +88,14 @@ void searchForPyOpcodes()
     auto positions = searchBytes(startBytes, sizeof(startBytes), searchRegions);
     for (uint64_t pos : positions) {
         printf("\t0x%lx: ", pos);
-        for (uint64_t i = 0; i < 16; i++) {
+        for (uint64_t i = 0; i < 50; i++) {
             printf("%x ", *(uint8_t*)(pos + i));
         }
         printf("\n");
     }
     printf("\tfinished opcode search\n");
 
-    if (positions.size() == 1) {
+    if (positions.size() >= 1) {
         bytecodeStart = positions[0];
         bytecodeEnd = bytecodeStart + 50; // arbitrary number (for now)
         foundBytecode = true;

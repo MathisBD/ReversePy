@@ -154,7 +154,7 @@ void CFG::writeDotGraph(FILE* file)
 {
     // dotty crashes if node labels are too long (it detects a stack smashing - 
     // labels must be read into a stack allocated buffer without checking for size lol)
-    uint32_t maxBBSize = 20;
+    uint32_t maxBBSize = 10;
 
     fprintf(file, "digraph {\n");
     fprintf(file, "\tsplines=ortho\n");
@@ -170,7 +170,7 @@ void CFG::writeDotGraph(FILE* file)
             if (bb->instrs[i]->bytecodeReadCount > 0) {
                 prevBytecodeRead = i;
             }
-            if (i < (maxBBSize/2) || i >= bb->instrs.size() - (maxBBSize/2) || i <= prevBytecodeRead + 7) {
+            if (i < (maxBBSize/2) || i >= bb->instrs.size() - (maxBBSize/2) || i <= prevBytecodeRead + 8) {
                 if (i != prevPrinted + 1 && i > 0) {
                     fprintf(file, ".....\\l");
                 }
