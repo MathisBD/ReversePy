@@ -166,8 +166,8 @@ void dumpTrace()
 {
     printf("[+] Dumping execution trace\n");
     for (auto trace : instrTrace) {
-        fprintf(traceDumpFile, "0x%lx; %s", trace.instr->addr, 
-            OPCODE_StringShort(trace.instr->opcode).c_str());
+        fprintf(traceDumpFile, "0x%lx: %s", trace.instr->addr, 
+            trace.instr->disassembly.c_str());
         fprintf(traceDumpFile, "\n");
     }
 }
@@ -241,7 +241,7 @@ void dumpBytecode()
         if (opcodeTraces[opcode].size() == 0) {
             continue;
         }
-        fprintf(bytecodeFile, "[0x%lx] : %lu traces : ", opcode, opcodeTraces[opcode].size());
+        fprintf(bytecodeFile, "[0x%x] : %lu traces : ", opcode, opcodeTraces[opcode].size());
         for (uint32_t i = 0; i < opcodeTraces[opcode].size() && i < 10; i++) {
             auto trace = opcodeTraces[opcode][i];
             fprintf(bytecodeFile, "(%lu->%lu) ", trace.first, trace.second);
