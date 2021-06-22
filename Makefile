@@ -20,5 +20,6 @@ clean:
 	rm -f -r ./obj-intel64
 	rm -f -r $(OUTPUT_DIR)
 	rm -f ./pin.log ./pintool.log
-	rm -f tototo tototo_after
+	rm -f ./tototo ./tototo_after
+	rm -f ./tmp*
 	rm -f -r ./__pycache__

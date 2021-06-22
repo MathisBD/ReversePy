@@ -82,7 +82,8 @@ SANITY_SUBSET := $(TEST_TOOL_ROOTS) $(TEST_ROOTS)
 SRC=tool.cpp \
 cfg.cpp \
 errors.cpp \
-mem.cpp
+mem.cpp \
+bytecode.cpp
 
 
 $(OBJDIR)%$(OBJ_SUFFIX): src/%.cpp 

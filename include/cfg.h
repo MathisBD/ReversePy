@@ -18,7 +18,7 @@ public:
     uint32_t size;
     uint32_t opcode; // XED opcode
     uint32_t execCount;
-    uint32_t bytecodeReadCount;
+    bool isMemRead;
     std::string disassembly;
 };
 
