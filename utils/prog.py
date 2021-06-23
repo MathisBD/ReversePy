@@ -1,5 +1,7 @@
+# An example program to analyze
+
 f = open("tototo", "w")
-for i in range(1000):
+for i in range(100):
     f.write("%d" % i)
 f2 = open("tototo_after", "w")
 #f.close()

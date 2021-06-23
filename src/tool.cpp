@@ -3,21 +3,13 @@
 #include <stdio.h>
 #include <sys/syscall.h>
 
+#include "mem.h"
 #include "errors.h"
 #include "cfg.h"
-#include "mem.h"
 #include "bytecode.h"
 #include "pin.H"
+#include "trace.h"
 
-class InstrTrace
-{
-public:
-    Instruction* instr;
-    // only for possible fetch instructions
-    uint16_t readBytecode;
-    InstrTrace(Instruction* instr_, uint16_t readBytecode_) 
-        : instr(instr_), readBytecode(readBytecode_) {};
-};
 
 KNOB< std::string > outputFolderKnob(KNOB_MODE_WRITEONCE, "pintool", "o", "output", "specify output folder name");
 static FILE* codeDumpFile;
@@ -32,31 +24,93 @@ static uint64_t prevAddr = 0;
 // is the interpreted program (e.g. prog.py) running ? 
 static bool progRunning = false; 
 
-// the complete execution trace of the program
-// (when progRunning == true).
-static std::vector<InstrTrace> instrTrace;
+// the trace of the current instruction
+static TraceElement traceEle;
 // maps opcode -> list of traces.
-// Each entry is a pair of indices, [start, end] in the complete trace).
+// Each entry is a pair of indices, [start, end] in the complete trace.
 static std::vector<std::pair<uint64_t, uint64_t>> opcodeTraces[256];
 
 bool isPossibleFetch(Instruction* instr) {
     return instr->opcode == XED_ICLASS_MOVZX && instr->isMemRead;
 }
 
-void recordTraceRegular(Instruction* instr)
+// called by PIN
+void recordMemRead(ADDRINT memAddr, UINT32 memSize)
 {
     if (progRunning) {
-        (instr->execCount)++;
-        instrTrace.emplace_back(instr, 0);
+        uint64_t value;
+        memmove(&value, (void*)memAddr, memSize);
+        traceEle.reads.emplace_back((uint64_t)memAddr, (uint64_t)memSize, value);
     }
 }
 
-// only for instructions that are possible fetches
-void recordTracePossibleFetch(Instruction* instr, ADDRINT readAddr)
+// called by PIN
+void recordMemWrite()
+{
+    if (progRunning) {
+        // TODO
+    }
+}
+
+inline void saveReg(const std::string& name, REG reg, const CONTEXT* ctx)
+{
+    uint64_t value;
+    PIN_GetContextRegval(ctx, reg, (uint8_t*)(&value));
+    traceEle.regs[name] = value;
+}
+
+inline void saveAllRegs(const CONTEXT* ctx)
+{
+    saveReg("rip", REG_RIP, ctx);
+    saveReg("rax", REG_RAX, ctx);
+    saveReg("rbx", REG_RBX, ctx);
+    saveReg("rcx", REG_RCX, ctx);
+    saveReg("rdx", REG_RDX, ctx);
+    saveReg("rdi", REG_RDI, ctx);
+    saveReg("rsi", REG_RSI, ctx);
+    saveReg("rsp", REG_RSP, ctx);
+    saveReg("rbp", REG_RBP, ctx);
+    saveReg("r8", REG_R8, ctx);
+    saveReg("r9", REG_R9, ctx);
+    saveReg("r10", REG_R10, ctx);
+    saveReg("r11", REG_R11, ctx);
+    saveReg("r12", REG_R12, ctx);
+    saveReg("r13", REG_R13, ctx);
+    saveReg("r14", REG_R14, ctx);
+    saveReg("r15", REG_R15, ctx);
+    saveReg("eflags", REG_EFLAGS, ctx);
+    //saveReg("fs", REG_FS, ctx);
+    //saveReg("gs", REG_GS, ctx);
+}
+
+inline void saveOpcodes(uint64_t insAddr, uint32_t insSize)
+{
+    uint8_t opcodes[16];
+    uint32_t fetched = PIN_SafeCopy((void*)opcodes, (void*)insAddr, insSize);
+    if (fetched < insSize) {
+        panic("couldn't get opcodes for instr at address 0x%lx\n", insAddr);
+    }
+    for (size_t i = 0; i < insSize; i++) {
+        traceEle.opcodes.push_back(opcodes[i]);
+    }
+}
+
+// called by PIN.
+// DON'T modify the context.
+void dumpTraceElement(const CONTEXT* ctx, Instruction* instr)
 {
     if (progRunning) {
         (instr->execCount)++;
-        instrTrace.emplace_back(instr, *((uint16_t*)readAddr));
+        saveAllRegs(ctx);
+        saveOpcodes(instr->addr, instr->size);
+        fprintf(traceDumpFile, "%s,\n", traceEle.toJson().c_str());
+
+        // reset the traceElement for the next instruction
+        traceEle.opcodes.clear();
+        traceEle.reads.clear();
+        traceEle.writes.clear();
+        // no need to clear the regs,
+        // we will overwrite them all.
     }
 }
 
@@ -73,12 +127,11 @@ void recordJump(ADDRINT addr)
 void syscallEntry(ADDRINT scNum, ADDRINT arg0, ADDRINT arg1, ADDRINT arg2,
     ADDRINT arg3, ADDRINT arg4, ADDRINT arg5)
 {
-    if (scNum == SYS_openat && !strcmp((char*)arg1, "prog.py")) {
+    if (scNum == SYS_openat && !strcmp((char*)arg1, "utils/prog.py")) {
         progRunning = true;
-        printf("[+] Opened file prog.py\n");
+        printf("[+] Opened file utils/prog.py\n");
     }
 }
-
 
 // called by PIN each time we encounter an instruction for 
 // the first time (and before we execute this instruction).
@@ -117,20 +170,27 @@ void insCallback(INS ins, void* v)
         IARG_SYSARG_VALUE, 4,
         IARG_SYSARG_VALUE, 5,
         IARG_END);
-    // dump execution trace
-    if (isPossibleFetch(instr)) {
-        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)recordTracePossibleFetch,
-            IARG_PTR, instr,
-            IARG_MEMORYREAD_EA,
-            IARG_END);
-    }
-    else {
-        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)recordTraceRegular, 
-            IARG_PTR, instr,
-            IARG_END);
-    }
-    
     if (getImgId(instr->addr) == mainImgId) {
+        // dump execution trace
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)dumpTraceElement,
+            IARG_CALL_ORDER, CALL_ORDER_LAST, 
+            IARG_CONST_CONTEXT,
+            IARG_PTR, instr,
+            IARG_END);
+        // record memory reads
+        uint32_t memOpCount = INS_MemoryOperandCount(ins);
+        for (uint32_t memOp = 0; memOp < memOpCount; memOp++) {
+            if (INS_MemoryOperandIsRead(ins, memOp)) {
+                // predicated means the function is not called
+                // if the predicate (e.g. for movcc) is false.
+                INS_InsertPredicatedCall(
+                    ins, IPOINT_BEFORE, (AFUNPTR)recordMemRead,
+                    IARG_CALL_ORDER, CALL_ORDER_DEFAULT, // between resetTrace() and dumpTrace()
+                    IARG_MEMORYOP_EA, memOp, 
+                    IARG_MEMORYREAD_SIZE,
+                    IARG_END);
+            }
+        }
         // record jumps
         INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)recordJump,
             IARG_UINT64, instr->addr,
@@ -162,16 +222,6 @@ void dumpInstrList()
     }
 }
 
-void dumpTrace()
-{
-    printf("[+] Dumping execution trace\n");
-    for (auto trace : instrTrace) {
-        fprintf(traceDumpFile, "0x%lx: %s", trace.instr->addr, 
-            trace.instr->disassembly.c_str());
-        fprintf(traceDumpFile, "\n");
-    }
-}
-
 Instruction* getFetch()
 {
     // get the CFG of the main image's code
@@ -186,13 +236,13 @@ Instruction* getFetch()
     cfg->mergeBlocks();
     cfg->checkIntegrity(false);
     // the fetch will be executed a lot
-    cfg->filterBBs(9000, 400);
-    cfg->checkIntegrity(false);
+    //cfg->filterBBs(9000, 400);
+    //cfg->checkIntegrity(false);
     //cfg->mergeBlocks();
     //cfg->checkIntegrity(false);
-    cfg->writeDotGraph(cfgDotFile);
+    cfg->writeDotGraph(cfgDotFile, 100);
 
-    std::vector<Instruction*> fetches;
+    /*std::vector<Instruction*> fetches;
     for (auto bb : cfg->getBasicBlocks()) {
         for (auto instr : bb->instrs) {
             if (isPossibleFetch(instr)) {
@@ -207,7 +257,7 @@ Instruction* getFetch()
     if (fetches.size() == 1) {
         return fetches[0];
     }
-    panic("Didn't find the python bytecode fetch.");
+    panic("Didn't find the python bytecode fetch.");*/
     return nullptr;
 }
 
@@ -215,7 +265,7 @@ void dumpBytecode()
 {
     Instruction* fetch = getFetch();
     
-    // dump the bytecode
+    /*// dump the bytecode
     printf("[+] Dumping bytecode\n");
     std::vector<uint64_t> fetchIndices;
     for (uint64_t i = 0; i < instrTrace.size(); i++) {
@@ -247,7 +297,7 @@ void dumpBytecode()
             fprintf(bytecodeFile, "(%lu->%lu) ", trace.first, trace.second);
         }
         fprintf(bytecodeFile, "\n");
-    }
+    }*/
 }
 
 // called by PIN at the end of the program.
@@ -257,8 +307,12 @@ void finiCallback(int code, void* v)
 {
     removeDeadInstrs();
     dumpInstrList();
-    dumpTrace();
     dumpBytecode();    
+
+    // finish the trace JSON dump
+    // (remove the last comma)
+    fseek(traceDumpFile, -2, SEEK_CUR);
+    fprintf(traceDumpFile, "\n]");
 
     // close the log files
     fclose(codeDumpFile);
@@ -309,6 +363,9 @@ int main(int argc, char* argv[])
     cfgDotFile = fopen((outputFolder + "cfg.dot").c_str(), "w");
     bytecodeFile = fopen((outputFolder + "bytecode").c_str(), "w");
     traceDumpFile = fopen((outputFolder + "traceDump").c_str(), "w");
+
+    // begin the trace JSON dump
+    fprintf(traceDumpFile, "[\n");
 
     // add PIN callbacks
     INS_AddInstrumentFunction(insCallback, 0);

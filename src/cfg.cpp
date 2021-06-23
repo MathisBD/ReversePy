@@ -150,11 +150,10 @@ void CFG::resetDfsStates()
 }
 
 
-void CFG::writeDotGraph(FILE* file)
+void CFG::writeDotGraph(FILE* file, uint32_t maxBBSize)
 {
     // dotty crashes if node labels are too long (it detects a stack smashing - 
-    // labels must be read into a stack allocated buffer without checking for size lol)
-    uint32_t maxBBSize = 10;
+    // labels must be read into a stack allocated buffer without checking for size lol).
 
     fprintf(file, "digraph {\n");
     fprintf(file, "\tsplines=ortho\n");
@@ -164,21 +163,11 @@ void CFG::writeDotGraph(FILE* file)
         // use the bb struct address as a unique identifier
         fprintf(file, "\t%lu[ label=\"", (uint64_t)bb);
         
-        uint32_t prevBytecodeRead = 0;
         uint32_t prevPrinted = 0;
         for (uint32_t i = 0; i < bb->instrs.size(); i++) {
-            if (bb->instrs[i]->bytecodeReadCount > 0) {
-                prevBytecodeRead = i;
-            }
-            if (i < (maxBBSize/2) || i >= bb->instrs.size() - (maxBBSize/2) || i <= prevBytecodeRead + 8) {
+            if (i < (maxBBSize/2) || i >= bb->instrs.size() - (maxBBSize/2)) {
                 if (i != prevPrinted + 1 && i > 0) {
                     fprintf(file, ".....\\l");
-                }
-                if (bb->instrs[i]->bytecodeReadCount > 0) {
-                    fprintf(file, ">>>%u>>>  ", bb->instrs[i]->bytecodeReadCount);
-                }
-                else {
-                    fprintf(file, "   ");
                 }
                 fprintf(file, "0x%lx: [%u] %s\\l", bb->instrs[i]->addr, 
                     bb->instrs[i]->execCount, bb->instrs[i]->disassembly.c_str());
