@@ -23,7 +23,7 @@ static std::map<uint64_t, Instruction*> instrList;
 static std::map<Jump, uint32_t> jumps;
 static uint64_t prevAddr = 0;
 // is the interpreted program (e.g. prog.py) running ? 
-static bool progRunning = true; 
+static bool progRunning = false; 
 
 // the trace of the current instruction
 static TraceElement traceEle;
@@ -41,78 +41,50 @@ void recordMemRead(ADDRINT memAddr, UINT32 memSize)
     if (progRunning) {
         uint64_t value;
         memmove(&value, (void*)memAddr, memSize);
-        traceEle.reads.emplace_back((uint64_t)memAddr, (uint64_t)memSize, value);
+        traceEle.reads[traceEle.readsCount++] = 
+            MemoryAccess((uint64_t)memAddr, (uint64_t)memSize, value);
     }
 }
 
 // called by PIN
-void recordMemWrite()
+void recordRegRead(REG reg, ADDRINT val)
 {
     if (progRunning) {
-        // TODO
+        traceEle.regs[traceEle.regsCount++] = std::make_pair(reg, val);
     }
-}
-
-static inline void saveReg(const std::string& name, REG reg, const CONTEXT* ctx)
-{
-    uint64_t value;
-    PIN_GetContextRegval(ctx, reg, (uint8_t*)(&value));
-    traceEle.regs[name] = value;
-}
-
-static inline void saveAllRegs(const CONTEXT* ctx)
-{
-    saveReg("rip", REG_RIP, ctx);
-    saveReg("rax", REG_RAX, ctx);
-    saveReg("rbx", REG_RBX, ctx);
-    saveReg("rcx", REG_RCX, ctx);
-    saveReg("rdx", REG_RDX, ctx);
-    saveReg("rdi", REG_RDI, ctx);
-    saveReg("rsi", REG_RSI, ctx);
-    saveReg("rsp", REG_RSP, ctx);
-    saveReg("rbp", REG_RBP, ctx);
-    saveReg("r8", REG_R8, ctx);
-    saveReg("r9", REG_R9, ctx);
-    saveReg("r10", REG_R10, ctx);
-    saveReg("r11", REG_R11, ctx);
-    saveReg("r12", REG_R12, ctx);
-    saveReg("r13", REG_R13, ctx);
-    saveReg("r14", REG_R14, ctx);
-    saveReg("r15", REG_R15, ctx);
-    saveReg("eflags", REG_EFLAGS, ctx);
-    //saveReg("fs", REG_FS, ctx);
-    //saveReg("gs", REG_GS, ctx);
 }
 
 static inline void saveOpcodes(uint64_t insAddr, uint32_t insSize)
 {
-    uint8_t opcodes[16];
-    uint32_t fetched = PIN_SafeCopy((void*)opcodes, (void*)insAddr, insSize);
-    if (fetched < insSize) {
+    traceEle.opcodesCount = PIN_SafeCopy((void*)traceEle.opcodes, (void*)insAddr, insSize);
+    if (traceEle.opcodesCount < insSize) {
         panic("couldn't get opcodes for instr at address 0x%lx\n", insAddr);
     }
-    for (size_t i = 0; i < insSize; i++) {
-        traceEle.opcodes.push_back(opcodes[i]);
-    }
+}
+
+static inline void saveReg(REG reg, const CONTEXT* ctx)
+{
+    uint64_t value;
+    PIN_GetContextRegval(ctx, reg, (uint8_t*)(&value));
+    traceEle.regs[traceEle.regsCount++] = std::make_pair(reg, value);
 }
 
 // called by PIN.
 // DON'T modify the context.
-void dumpTraceElement(const CONTEXT* ctx, Instruction* instr)
+void dumpTraceElement(Instruction* instr, const CONTEXT* ctx)
 {
     if (progRunning) {
         (instr->execCount)++;
-        saveAllRegs(ctx);
         saveOpcodes(instr->addr, instr->size);
+        saveReg(REG_RIP, ctx);
+        saveReg(REG_EFLAGS, ctx);
         traceEle.toJson(traceDumpStream);
         traceDumpStream << ",\n";
 
         // reset the traceElement for the next instruction
-        traceEle.opcodes.clear();
-        traceEle.reads.clear();
-        traceEle.writes.clear();
-        // no need to clear the regs,
-        // we will overwrite them all.
+        traceEle.opcodesCount = 0;
+        traceEle.regsCount = 0;
+        traceEle.readsCount = 0;
     }
 }
 
@@ -175,10 +147,22 @@ void insCallback(INS ins, void* v)
     if (getImgId(instr->addr) == mainImgId) {
         // dump execution trace
         INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)dumpTraceElement,
-            IARG_CALL_ORDER, CALL_ORDER_LAST, 
-            IARG_CONST_CONTEXT,
+            IARG_CALL_ORDER, CALL_ORDER_LAST,
             IARG_PTR, instr,
+            IARG_CONST_CONTEXT,
             IARG_END);
+        // record register reads
+        uint32_t regCount = INS_MaxNumRRegs(ins);
+        for (uint32_t i = 0; i < regCount; i++) {
+            REG reg = INS_RegR(ins, i);
+            if (REG_valid(reg) && REG_is_gr(REG_FullRegName(reg))) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)recordRegRead,
+                    IARG_CALL_ORDER, CALL_ORDER_DEFAULT, // before dumpTrace()
+                    IARG_UINT32, REG_FullRegName(reg),
+                    IARG_REG_VALUE, REG_FullRegName(reg),
+                    IARG_END);
+            }
+        }
         // record memory reads
         uint32_t memOpCount = INS_MemoryOperandCount(ins);
         for (uint32_t memOp = 0; memOp < memOpCount; memOp++) {
@@ -187,7 +171,7 @@ void insCallback(INS ins, void* v)
                 // if the predicate (e.g. for movcc) is false.
                 INS_InsertPredicatedCall(
                     ins, IPOINT_BEFORE, (AFUNPTR)recordMemRead,
-                    IARG_CALL_ORDER, CALL_ORDER_DEFAULT, // between resetTrace() and dumpTrace()
+                    IARG_CALL_ORDER, CALL_ORDER_DEFAULT, // before dumpTrace()
                     IARG_MEMORYOP_EA, memOp, 
                     IARG_MEMORYREAD_SIZE,
                     IARG_END);

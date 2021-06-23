@@ -1,6 +1,11 @@
 #include "trace.h"
 #include <iostream>
+#include "errors.h"
 
+
+MemoryAccess::MemoryAccess()
+{
+}
 
 MemoryAccess::MemoryAccess(uint64_t addr_, uint64_t size_, uint64_t value_)
     : addr(addr_), size(size_), value(value_)
@@ -15,38 +20,37 @@ void MemoryAccess::toJson(std::fstream& stream) const
         << "\"value\": \""    << value    << "\" }";
 }
 
-static inline void regsToJson(const std::map<std::string, uint64_t>& regs, std::fstream& stream)
+inline void TraceElement::regsToJson(std::fstream& stream) const
 {
     stream << "{ ";
-    size_t i = 0;
-    for (auto it = regs.begin(); it != regs.end(); it++) {
-        std::string name = it->first;
-        uint64_t val = it->second;
+    for (size_t i = 0; i < regsCount; i++) {
+        REG reg = regs[i].first;
+        std::string name = REG_StringShort(reg);
+        uint64_t val = regs[i].second;
         if (i > 0) {
             stream << ", ";
         }
         stream << "\"" << name << "\": \"" << val << "\"";
-        i++;
     }
     stream << " }";
 }
 
-static inline void memListToJson(const std::vector<MemoryAccess>& memList, std::fstream& stream)
+inline void TraceElement::readsToJson(std::fstream& stream) const
 {
     stream << "[ ";
-    for (size_t i = 0; i < memList.size(); i++) {
+    for (size_t i = 0; i < readsCount; i++) {
         if (i > 0) {
             stream << ", ";
         }    
-        memList[i].toJson(stream);    
+        reads[i].toJson(stream);    
     }
     stream << " ]";
 }
 
-static inline void opcodesToJson(const std::vector<uint8_t>& opcodes, std::fstream& stream)
+inline void TraceElement::opcodesToJson(std::fstream& stream) const 
 {
     stream << "[ ";
-    for (size_t i = 0; i < opcodes.size(); i++) {
+    for (size_t i = 0; i < opcodesCount; i++) {
         if (i > 0) {
             stream << ", ";
         }
@@ -60,15 +64,14 @@ static inline void opcodesToJson(const std::vector<uint8_t>& opcodes, std::fstre
 void TraceElement::toJson(std::fstream& stream) const 
 {
     stream << "{ \"opcodes\": "; 
-    opcodesToJson(opcodes, stream); 
-    
-    stream << ", \"regs\": ";
-    regsToJson(regs, stream);
-        
-    stream << ", \"reads\": ";
-    memListToJson(reads, stream);
-
-    stream << ", \"writes\": ";
-    memListToJson(writes, stream);
+    opcodesToJson(stream); 
+    if (regsCount > 0) {
+        stream << ", \"regs\": ";
+        regsToJson(stream);
+    }   
+    if (readsCount > 0) {
+        stream << ", \"reads\": ";
+        readsToJson(stream);
+    }
     stream << " }";
 }
