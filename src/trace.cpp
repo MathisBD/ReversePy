@@ -1,5 +1,5 @@
 #include "trace.h"
-#include <sstream>
+#include <iostream>
 
 
 MemoryAccess::MemoryAccess(uint64_t addr_, uint64_t size_, uint64_t value_)
@@ -7,71 +7,68 @@ MemoryAccess::MemoryAccess(uint64_t addr_, uint64_t size_, uint64_t value_)
 {
 }
 
-std::string MemoryAccess::toJson() const 
+void MemoryAccess::toJson(std::fstream& stream) const 
 {
-    std::stringstream ss;
-    ss  << std::hex << "{ "
+    stream << "{ "
         << "\"addr\": \""     << addr     << "\", "
         << "\"size\": \""     << size     << "\", "
         << "\"value\": \""    << value    << "\" }";
-    return ss.str();
 }
 
-std::string regsToJson(const std::map<std::string, uint64_t>& regs)
+static inline void regsToJson(const std::map<std::string, uint64_t>& regs, std::fstream& stream)
 {
-    std::stringstream ss;
-    ss << std::hex << "{ ";
+    stream << "{ ";
     size_t i = 0;
     for (auto it = regs.begin(); it != regs.end(); it++) {
         std::string name = it->first;
         uint64_t val = it->second;
         if (i > 0) {
-            ss << ", ";
+            stream << ", ";
         }
-        ss << "\"" << name << "\": \"" << val << "\"";
+        stream << "\"" << name << "\": \"" << val << "\"";
         i++;
     }
-    ss << " }";
-    return ss.str();
+    stream << " }";
 }
 
-std::string memListToJson(const std::vector<MemoryAccess>& memList)
+static inline void memListToJson(const std::vector<MemoryAccess>& memList, std::fstream& stream)
 {
-    std::stringstream ss;
-    ss << "[ ";
+    stream << "[ ";
     for (size_t i = 0; i < memList.size(); i++) {
         if (i > 0) {
-            ss << ", ";
+            stream << ", ";
         }    
-        ss << memList[i].toJson();    
+        memList[i].toJson(stream);    
     }
-    ss << " ]";
-    return ss.str();
+    stream << " ]";
 }
 
-std::string opcodesToJson(const std::vector<uint8_t>& opcodes)
+static inline void opcodesToJson(const std::vector<uint8_t>& opcodes, std::fstream& stream)
 {
-    std::stringstream ss;
-    ss << std::hex << "[ ";
+    stream << "[ ";
     for (size_t i = 0; i < opcodes.size(); i++) {
         if (i > 0) {
-            ss << ", ";
+            stream << ", ";
         }
         // we have to convert because uint8_t is treated as a char
         // by streams.
-        ss << "\"" << (uint32_t)(opcodes[i]) << "\"";
+        stream << "\"" << (uint32_t)(opcodes[i]) << "\"";
     }
-    ss << " ]";
-    return ss.str();
+    stream << " ]";
 }
 
-std::string TraceElement::toJson() const 
+void TraceElement::toJson(std::fstream& stream) const 
 {
-    std::stringstream ss;
-    ss  << "{ "
-        << "\"opcodes\": "  << opcodesToJson(opcodes)   << ", "
-        << "\"regs\": "     << regsToJson(regs)         << ", "
-        << "\"reads\": "    << memListToJson(reads)     << ", "
-        << "\"writes\": "   << memListToJson(writes)    << " }";
-    return ss.str();
+    stream << "{ \"opcodes\": "; 
+    opcodesToJson(opcodes, stream); 
+    
+    stream << ", \"regs\": ";
+    regsToJson(regs, stream);
+        
+    stream << ", \"reads\": ";
+    memListToJson(reads, stream);
+
+    stream << ", \"writes\": ";
+    memListToJson(writes, stream);
+    stream << " }";
 }

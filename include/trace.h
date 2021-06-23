@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <vector>
 #include <string>
+#include <fstream>
 
 class MemoryAccess
 {
@@ -13,7 +14,7 @@ public:
 
     MemoryAccess(uint64_t addr_, uint64_t size_, uint64_t value_);
 
-    std::string toJson() const;
+    void toJson(std::fstream& stream) const;
 };
 
 class TraceElement
@@ -29,5 +30,5 @@ public:
     // the memory written to by the instruction
     std::vector<MemoryAccess> writes;
 
-    std::string toJson() const;
+    void toJson(std::fstream& stream) const;
 };

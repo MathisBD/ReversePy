@@ -2,6 +2,7 @@
 #include <string>
 #include <stdio.h>
 #include <sys/syscall.h>
+#include <fstream>
 
 #include "mem.h"
 #include "errors.h"
@@ -16,13 +17,13 @@ static FILE* codeDumpFile;
 static FILE* cfgDotFile;
 static FILE* imgFile;
 static FILE* bytecodeFile;
-static FILE* traceDumpFile;
+static std::fstream traceDumpStream;
 
 static std::map<uint64_t, Instruction*> instrList;
 static std::map<Jump, uint32_t> jumps;
 static uint64_t prevAddr = 0;
 // is the interpreted program (e.g. prog.py) running ? 
-static bool progRunning = false; 
+static bool progRunning = true; 
 
 // the trace of the current instruction
 static TraceElement traceEle;
@@ -52,14 +53,14 @@ void recordMemWrite()
     }
 }
 
-inline void saveReg(const std::string& name, REG reg, const CONTEXT* ctx)
+static inline void saveReg(const std::string& name, REG reg, const CONTEXT* ctx)
 {
     uint64_t value;
     PIN_GetContextRegval(ctx, reg, (uint8_t*)(&value));
     traceEle.regs[name] = value;
 }
 
-inline void saveAllRegs(const CONTEXT* ctx)
+static inline void saveAllRegs(const CONTEXT* ctx)
 {
     saveReg("rip", REG_RIP, ctx);
     saveReg("rax", REG_RAX, ctx);
@@ -83,7 +84,7 @@ inline void saveAllRegs(const CONTEXT* ctx)
     //saveReg("gs", REG_GS, ctx);
 }
 
-inline void saveOpcodes(uint64_t insAddr, uint32_t insSize)
+static inline void saveOpcodes(uint64_t insAddr, uint32_t insSize)
 {
     uint8_t opcodes[16];
     uint32_t fetched = PIN_SafeCopy((void*)opcodes, (void*)insAddr, insSize);
@@ -103,7 +104,8 @@ void dumpTraceElement(const CONTEXT* ctx, Instruction* instr)
         (instr->execCount)++;
         saveAllRegs(ctx);
         saveOpcodes(instr->addr, instr->size);
-        fprintf(traceDumpFile, "%s,\n", traceEle.toJson().c_str());
+        traceEle.toJson(traceDumpStream);
+        traceDumpStream << ",\n";
 
         // reset the traceElement for the next instruction
         traceEle.opcodes.clear();
@@ -311,15 +313,15 @@ void finiCallback(int code, void* v)
 
     // finish the trace JSON dump
     // (remove the last comma)
-    fseek(traceDumpFile, -2, SEEK_CUR);
-    fprintf(traceDumpFile, "\n]");
+    traceDumpStream.seekp(-2, std::ios_base::cur);
+    traceDumpStream << "\n]";
 
     // close the log files
     fclose(codeDumpFile);
     fclose(imgFile);
     fclose(cfgDotFile);
     fclose(bytecodeFile);
-    fclose(traceDumpFile);
+    traceDumpStream.close();
 }
 
 void imgLoadCallback(IMG img, void* v)
@@ -362,10 +364,10 @@ int main(int argc, char* argv[])
     imgFile = fopen((outputFolder + "img_loading").c_str(), "w");
     cfgDotFile = fopen((outputFolder + "cfg.dot").c_str(), "w");
     bytecodeFile = fopen((outputFolder + "bytecode").c_str(), "w");
-    traceDumpFile = fopen((outputFolder + "traceDump").c_str(), "w");
+    traceDumpStream.open((outputFolder + "traceDump").c_str(), std::ios::out);
 
     // begin the trace JSON dump
-    fprintf(traceDumpFile, "[\n");
+    traceDumpStream << std::hex << "[\n";
 
     // add PIN callbacks
     INS_AddInstrumentFunction(insCallback, 0);
