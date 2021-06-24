@@ -3,7 +3,6 @@ from triton import *
 from trace import *
 from bytecode import *
 from collections import defaultdict
-import sys
 
 triton_regs_by_name = {
     'rax':  REG.X86_64.RAX,
@@ -29,6 +28,8 @@ triton_regs_by_name = {
 
 def build_triton_ins(instr, ctx):
     # create the instruction
+    if instr: print("hi"); print("hello")
+    
     ins = Instruction()
     opcodes = TraceExtractor.instr_opcodes(instr)
     ins.setOpcode(opcodes)
@@ -49,6 +50,7 @@ def build_triton_ins(instr, ctx):
             value = int(read['value'], 16)
             ctx.setConcreteMemoryValue(MemoryAccess(addr, size), value)
     return ins 
+
 
 def emulate_trace(trace):
     ctx = TritonContext(ARCH.X86_64)
