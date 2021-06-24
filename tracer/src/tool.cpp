@@ -22,8 +22,10 @@ static std::fstream traceDumpStream;
 static std::map<uint64_t, Instruction*> instrList;
 static std::map<Jump, uint32_t> jumps;
 static uint64_t prevAddr = 0;
+
 // is the interpreted program (e.g. prog.py) running ? 
-static bool progRunning = true; 
+static bool progRunning;
+static std::string progName; 
 
 // the trace of the current instruction
 static TraceElement traceEle;
@@ -79,7 +81,7 @@ void dumpTraceElement(Instruction* instr, const CONTEXT* ctx)
         saveReg(REG_RIP, ctx);
         saveReg(REG_EFLAGS, ctx);
         traceEle.toJson(traceDumpStream);
-        traceDumpStream << ",\n";
+        traceDumpStream << "\n";
 
         // reset the traceElement for the next instruction
         traceEle.opcodesCount = 0;
@@ -101,9 +103,9 @@ void recordJump(ADDRINT addr)
 void syscallEntry(ADDRINT scNum, ADDRINT arg0, ADDRINT arg1, ADDRINT arg2,
     ADDRINT arg3, ADDRINT arg4, ADDRINT arg5)
 {
-    if (scNum == SYS_openat && !strcmp((char*)arg1, "utils/prog.py")) {
+    if (!progRunning && scNum == SYS_openat && std::string((char*)arg1) == progName) {
         progRunning = true;
-        printf("[+] Opened file utils/prog.py\n");
+        printf("[+] Opened file %s\n", progName.c_str());
     }
 }
 
@@ -208,83 +210,6 @@ void dumpInstrList()
     }
 }
 
-Instruction* getFetch()
-{
-    // get the CFG of the main image's code
-    std::vector<Instruction*> cfgInstrVect;
-    for (auto it = instrList.begin(); it != instrList.end(); it++) {
-        if (getImgId(it->first) == mainImgId) {
-            cfgInstrVect.push_back(it->second);
-        }
-    }
-    CFG* cfg = new CFG(cfgInstrVect, jumps);
-    cfg->checkIntegrity(false);
-    cfg->mergeBlocks();
-    cfg->checkIntegrity(false);
-    // the fetch will be executed a lot
-    //cfg->filterBBs(9000, 400);
-    //cfg->checkIntegrity(false);
-    //cfg->mergeBlocks();
-    //cfg->checkIntegrity(false);
-    cfg->writeDotGraph(cfgDotFile, 100);
-
-    /*std::vector<Instruction*> fetches;
-    for (auto bb : cfg->getBasicBlocks()) {
-        for (auto instr : bb->instrs) {
-            if (isPossibleFetch(instr)) {
-                fetches.push_back(instr);
-            }
-        }
-    }
-    printf("[+] Possible fetch instructions :\n");
-    for (auto instr : fetches) {
-        printf("\t0x%lx: %s\n", instr->addr, instr->disassembly.c_str());
-    }
-    if (fetches.size() == 1) {
-        return fetches[0];
-    }
-    panic("Didn't find the python bytecode fetch.");*/
-    return nullptr;
-}
-
-void dumpBytecode()
-{
-    Instruction* fetch = getFetch();
-    
-    /*// dump the bytecode
-    printf("[+] Dumping bytecode\n");
-    std::vector<uint64_t> fetchIndices;
-    for (uint64_t i = 0; i < instrTrace.size(); i++) {
-        auto trace = instrTrace[i];
-        if (trace.instr == fetch) {
-            uint8_t opcode = opcodeFromBytecode(trace.readBytecode);
-            uint8_t arg = argFromBytecode(trace.readBytecode);
-            fprintf(bytecodeFile, "%x %x %s\n", opcode, arg, opcodeName(opcode).c_str());
-            fetchIndices.push_back(i);
-        }
-    }
-
-    // get the opcode traces
-    for (uint64_t i = 0; i < fetchIndices.size(); i++) {
-        uint64_t start = fetchIndices[i];
-        uint64_t end = fetchIndices[i+1] - 1;
-        uint8_t opcode = opcodeFromBytecode(instrTrace[start].readBytecode);
-        opcodeTraces[opcode].push_back(std::make_pair(start, end));
-    }
-
-    // dump the opcode traces
-    for (uint32_t opcode = 0; opcode < 256; opcode++) {
-        if (opcodeTraces[opcode].size() == 0) {
-            continue;
-        }
-        fprintf(bytecodeFile, "[0x%x] : %lu traces : ", opcode, opcodeTraces[opcode].size());
-        for (uint32_t i = 0; i < opcodeTraces[opcode].size() && i < 10; i++) {
-            auto trace = opcodeTraces[opcode][i];
-            fprintf(bytecodeFile, "(%lu->%lu) ", trace.first, trace.second);
-        }
-        fprintf(bytecodeFile, "\n");
-    }*/
-}
 
 // called by PIN at the end of the program.
 // we can't write to stdout here since stdout might
@@ -293,13 +218,7 @@ void finiCallback(int code, void* v)
 {
     removeDeadInstrs();
     dumpInstrList();
-    dumpBytecode();    
-
-    // finish the trace JSON dump
-    // (remove the last comma)
-    traceDumpStream.seekp(-2, std::ios_base::cur);
-    traceDumpStream << "\n]";
-
+    
     // close the log files
     fclose(codeDumpFile);
     fclose(imgFile);
@@ -339,6 +258,17 @@ int main(int argc, char* argv[])
     }
     PIN_SetSyntaxATT();
 
+    // get the name of the python program we are running
+    progName = std::string(argv[argc-1]);
+    if (progName.size() > 3 && progName.substr(progName.size() - 3, 3) == ".py") {
+        printf("[+] Detected you are running the python program %s\n", progName.c_str());
+        // wait for the interpreter to open the program before tracing it
+        progRunning = false;
+    }
+    else {
+        progRunning = true;
+    }
+
     // open the log files
     std::string outputFolder = outputFolderKnob.Value();
     if (outputFolder[outputFolder.size() - 1] != '/') {
@@ -351,7 +281,7 @@ int main(int argc, char* argv[])
     traceDumpStream.open((outputFolder + "traceDump").c_str(), std::ios::out);
 
     // begin the trace JSON dump
-    traceDumpStream << std::hex << "[\n";
+    traceDumpStream << std::hex;
 
     // add PIN callbacks
     INS_AddInstrumentFunction(insCallback, 0);
