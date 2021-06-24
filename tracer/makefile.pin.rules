@@ -83,7 +83,6 @@ SRC=tool.cpp \
 cfg.cpp \
 errors.cpp \
 mem.cpp \
-bytecode.cpp \
 trace.cpp
 
 
