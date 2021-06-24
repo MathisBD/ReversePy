@@ -33,7 +33,5 @@
 
 # Pin logs
 *.log
-
-# Folders
-obj-intel64
 output
+obj-intel64
