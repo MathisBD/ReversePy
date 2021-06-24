@@ -23,7 +23,7 @@ static std::map<uint64_t, Instruction*> instrList;
 static std::map<Jump, uint32_t> jumps;
 static uint64_t prevAddr = 0;
 // is the interpreted program (e.g. prog.py) running ? 
-static bool progRunning = false; 
+static bool progRunning = true; 
 
 // the trace of the current instruction
 static TraceElement traceEle;

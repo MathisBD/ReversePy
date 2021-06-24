@@ -1,8 +1,8 @@
 
 ifndef PIN_ROOT 
-	PIN_ROOT=$(CURDIR)/../pin-3.19-98425-gd666b2bee-gcc-linux
+	PIN_ROOT=/home/mathis/src/StageL3/pin-3.19-98425-gd666b2bee-gcc-linux
 endif
-OUTPUT_DIR=$(CURDIR)/output
+OUTPUT_DIR=output
 TOOL=obj-intel64/tool.so
 
 PROG?=ls
@@ -17,9 +17,9 @@ all:
 	$(PIN_ROOT)/pin -t $(TOOL) -o $(OUTPUT_DIR) -- $(PROG)
 
 clean:
-	rm -f -r ./obj-intel64
+	rm -f -r obj-intel64
 	rm -f -r $(OUTPUT_DIR)
-	rm -f ./pin.log ./pintool.log
-	rm -f ./tototo ./tototo_after
-	rm -f ./tmp*
-	rm -f -r ./__pycache__
+	rm -f pin.log pintool.log
+	rm -f tototo tototo_after
+	rm -f tmp*
+	rm -f -r __pycache__
