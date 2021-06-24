@@ -13,8 +13,13 @@ class TraceExtractor:
     def __del__(self):
         self.file.close()
 
-    def instr_addr(self, instr):
+    @staticmethod
+    def instr_addr(instr):
         return int(instr['regs']['rip'], 16)
+
+    @staticmethod
+    def instr_opcodes(instr):
+        return bytes([int(op, 16) for op in instr['opcodes']])
 
     def disassemble(self, instr):
         opcodes = bytes([int(op, 16) for op in instr['opcodes']])
@@ -40,7 +45,7 @@ class TraceExtractor:
         fetches = set()
         for i, line in enumerate(self.file):
             instr = json.loads(line)
-            addr = self.instr_addr(instr)
+            addr = TraceExtractor.instr_addr(instr)
             # increase exec count
             self.exec_count[addr] += 1
             # determine if this is a possible fetch
@@ -82,7 +87,7 @@ class TraceExtractor:
             if len(line) == 0:
                 raise Exception("skip_to_fetch: reached end of file")
             instr = json.loads(line)
-            if self.instr_addr(instr) == self.fetch_addr:
+            if TraceExtractor.instr_addr(instr) == self.fetch_addr:
                 return instr
 
     # extract a single opcode trace from the trace dump file
@@ -99,7 +104,7 @@ class TraceExtractor:
             if len(line) == 0:
                 return trace
             instr = json.loads(line)
-            if self.instr_addr(instr) == self.fetch_addr:
+            if TraceExtractor.instr_addr(instr) == self.fetch_addr:
                 self.file.seek(ofs, os.SEEK_SET)
                 return trace 
             trace.append(instr)

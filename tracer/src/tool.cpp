@@ -7,7 +7,6 @@
 #include "mem.h"
 #include "errors.h"
 #include "cfg.h"
-#include "bytecode.h"
 #include "pin.H"
 #include "trace.h"
 
@@ -43,6 +42,7 @@ void recordMemRead(ADDRINT memAddr, UINT32 memSize)
     if (progRunning) {
         uint64_t value;
         memmove(&value, (void*)memAddr, memSize);
+        value &= (1 << (8*memSize)) - 1; // zero out the irrelevant part
         traceEle.reads[traceEle.readsCount++] = 
             MemoryAccess((uint64_t)memAddr, (uint64_t)memSize, value);
     }
