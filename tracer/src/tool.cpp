@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <sys/syscall.h>
 #include <fstream>
+#include <sstream>
 
 #include "mem.h"
 #include "errors.h"
@@ -32,9 +33,6 @@ static TraceElement traceEle;
 // Each entry is a pair of indices, [start, end] in the complete trace.
 static std::vector<std::pair<uint64_t, uint64_t>> opcodeTraces[256];
 
-bool isPossibleFetch(Instruction* instr) {
-    return instr->opcode == XED_ICLASS_MOVZX && instr->isMemRead;
-}
 
 // called by PIN
 void recordMemRead(ADDRINT memAddr, UINT32 memSize)
@@ -126,7 +124,11 @@ void insCallback(INS ins, void* v)
         instr = new Instruction();
         instr->addr = INS_Address(ins);
         instr->size = INS_Size(ins);
-        instr->opcode = INS_Opcode(ins);
+        // get the opcodes
+        instr->opcodesCount = PIN_SafeCopy((void*)instr->opcodes, (void*)instr->addr, instr->size);
+        if (instr->opcodesCount < instr->size) {
+            panic("couldn't get opcodes for instr at address 0x%lx\n", instr->addr);
+        }
         instr->execCount = 0;
         instr->isMemRead = INS_IsMemoryRead(ins);
         instr->disassembly = INS_Disassemble(ins);    
@@ -201,13 +203,26 @@ void removeDeadInstrs()
 
 void dumpInstrList()
 {
+    fprintf(codeDumpFile, "{\n");
     for (auto it = instrList.begin(); it != instrList.end(); it++) {
         Instruction* instr = it->second;
         if (getImgId(instr->addr) == mainImgId) {
-            fprintf(codeDumpFile, "0x%lx: [%u] %s\n", 
-                instr->addr, instr->execCount, instr->disassembly.c_str());
+            std::stringstream opcodeStr;
+            opcodeStr << std::hex << "[ ";
+            for (size_t i = 0; i < instr->opcodesCount; i++) {
+                if (i > 0) {
+                    opcodeStr << ", ";
+                }
+                opcodeStr << "\"" << (uint32_t)(instr->opcodes[i]) << "\"";
+            }
+            opcodeStr << " ]";
+            fprintf(codeDumpFile, "\"%lx\": { \"exec_count\": %u, \"opcodes\": %s},\n", 
+                instr->addr, instr->execCount, opcodeStr.str().c_str());
         }
     }
+    // remove the trailing comma
+    fseek(codeDumpFile, -2, SEEK_CUR);
+    fprintf(codeDumpFile, "}\n");
 }
 
 

@@ -4,14 +4,16 @@ import json
 from collections import defaultdict
 
 class TraceExtractor:
-    def __init__(self, file_path):
-        self.file = open(file_path, "r")
+    def __init__(self, trace_path, code_path):
+        self.trace_file = open(trace_path, "r")
+        self.code_file = open(code_path, "r")
         self.md = cap.Cs(cap.CS_ARCH_X86, cap.CS_MODE_64)
         self.exec_count = defaultdict(lambda: 0)
         self.fetch_addr = 0
         
     def __del__(self):
-        self.file.close()
+        self.trace_file.close()
+        self.code_file.close()
 
     @staticmethod
     def instr_addr(instr):
@@ -41,32 +43,28 @@ class TraceExtractor:
         return False
 
     def calculate_stats(self, fetch_freq_threshold):
-        self.file.seek(0, os.SEEK_SET)
+        # calculate exec counts
+        self.code_file.seek(0, os.SEEK_SET)
+        code = json.load(self.code_file)
+        for key in code.keys():
+            addr = int(key, 16)
+            self.exec_count[addr] = code[key]['exec_count']
+        # get the fetch
         fetches = set()
-        for i, line in enumerate(self.file):
+        self.trace_file.seek(0, os.SEEK_SET)
+        for line in self.trace_file:
             instr = json.loads(line)
             addr = TraceExtractor.instr_addr(instr)
-            # increase exec count
-            self.exec_count[addr] += 1
-            # determine if this is a possible fetch
-            #print("0x%x: %s" % (addr, opcodes))
-            if self.is_possible_fetch(instr):
+            if self.is_possible_fetch(instr) and self.exec_count[addr] >= fetch_freq_threshold:
+                #print(instr)
                 fetches.add(addr)
-
-            if i % 100000 == 0:
-                print(i)
-        
-        fetches = filter(
-            lambda fetch: self.exec_count[fetch] >= fetch_freq_threshold, 
-            fetches)
+            
         fetches = list(fetches)
-
         print("[+] Possible fetches :", fetches)
         if len(fetches) != 1:
             raise Exception("didn't find the interpreter fetch")
         self.fetch_addr = fetches[0]
-        # reset the file offset so that we can extract traces
-        self.file.seek(0, os.SEEK_SET)
+        self.trace_file.seek(0, os.SEEK_SET)
 
     # get the bytecode read by a fetch instruction
     def get_bytecode(self, instr):
@@ -82,7 +80,7 @@ class TraceExtractor:
     
     def skip_to_fetch(self):
         while True:
-            line = self.file.readline()
+            line = self.trace_file.readline()
             # no fetch left
             if len(line) == 0:
                 raise Exception("skip_to_fetch: reached end of file")
@@ -98,14 +96,14 @@ class TraceExtractor:
 
         trace = [fetch]
         while True:
-            ofs = self.file.tell()
-            line = self.file.readline()
+            ofs = self.trace_file.tell()
+            line = self.trace_file.readline()
             # end of file
             if len(line) == 0:
                 return trace
             instr = json.loads(line)
             if TraceExtractor.instr_addr(instr) == self.fetch_addr:
-                self.file.seek(ofs, os.SEEK_SET)
+                self.trace_file.seek(ofs, os.SEEK_SET)
                 return trace 
             trace.append(instr)
 

@@ -16,7 +16,8 @@ class Instruction
 public:
     uint64_t addr;
     uint32_t size;
-    uint32_t opcode; // XED opcode
+    size_t opcodesCount;
+    uint8_t opcodes[16];
     uint32_t execCount;
     bool isMemRead;
     std::string disassembly;

@@ -28,8 +28,6 @@ triton_regs_by_name = {
 
 def build_triton_ins(instr, ctx):
     # create the instruction
-    if instr: print("hi"); print("hello")
-    
     ins = Instruction()
     opcodes = TraceExtractor.instr_opcodes(instr)
     ins.setOpcode(opcodes)
@@ -82,9 +80,9 @@ def emulate_trace(trace):
 
 
 if __name__ == "__main__":
-    te = TraceExtractor("../tracer/output/traceDump")
-    #te.calculate_stats(9000)
-    te.fetch_addr = 94056937240388
+    te = TraceExtractor("../tracer/output/traceDump", "../tracer/output/code_dump")
+    te.calculate_stats(9000)
+    #te.fetch_addr = 94056937240388
         
     opcodeTraces = defaultdict(lambda: [])
     for _ in range(200):
@@ -100,13 +98,13 @@ if __name__ == "__main__":
         #    print("0x%lx: %s\t%s" % (addr, i.mnemonic, i.op_str))
     
     trace = opcodeTraces[0x64][0] # LOAD_CONST
-    #for instr in trace:
-    #    i = te.disassemble(instr)
-    #    addr = TraceExtractor.instr_addr(instr)
-    #    print("0x%lx: %s\t%s" % (addr, i.mnemonic, i.op_str))
-    #    for reg in instr['regs'].keys():
-    #        val = instr['regs'][reg]
-    #        print("\t%s: 0x%x" % (reg, int(val, 16)))
+    for instr in trace:
+        i = te.disassemble(instr)
+        addr = TraceExtractor.instr_addr(instr)
+        print("0x%lx: %s\t%s" % (addr, i.mnemonic, i.op_str))
+        for reg in instr['regs'].keys():
+            val = instr['regs'][reg]
+            print("\t%s: 0x%x" % (reg, int(val, 16)))
 
-    emulate_trace(trace)
+    #emulate_trace(trace)
     
