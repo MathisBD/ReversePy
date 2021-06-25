@@ -1,0 +1,31 @@
+    0x562dd1563744: movzx edx, word ptr [r12]
+[+] Tainted edx
+    0x562dd1563749: add r12, 2
+[+] 0x562dd156374d: movzx r13d, dl
+[+] 0x562dd1563751: movzx edx, dh
+[+] 0x562dd1563754: cmp r13d, 0xa3
+[+] 0x562dd156375b: ja 0x562dd1563e38
+[+] 0x562dd1563761: lea rcx, [rip + 0x22caa8]
+[+] 0x562dd1563768: mov eax, r13d
+[+] 0x562dd156376b: movsxd rax, dword ptr [rcx + rax*4]
+[+] 0x562dd156376f: add rax, rcx
+[+] 0x562dd1563772: jmp rax
+
+[+] 0x562dd1566c73: mov r11d, edx
+    0x562dd1566c76: jmp 0x562dd1564054
+[+] 0x562dd1564054: movsxd r12, r11d
+[+] 0x562dd1564057: and r12, 0xfffffffffffffffe
+[+] 0x562dd156405b: add r12, qword ptr [rsp + 8]
+    0x562dd1564060: jmp 0x562dd156365e
+    0x562dd156365e: mov eax, dword ptr [rip + 0x32f92c]
+    0x562dd1563664: test eax, eax
+    0x562dd1563666: je 0x562dd1563710
+    
+    0x562dd1563710: lea r14, [rip + 0x3084c9]
+    0x562dd1563717: mov r10d, dword ptr [rip + 0x32f86e]
+[+] 0x562dd156371e: mov rsi, r12
+[+] 0x562dd1563721: sub rsi, qword ptr [rsp + 8]
+[+] 0x562dd1563726: mov dword ptr [rbx + 0x68], esi
+[+] 0x562dd1563729: mov edx, esi
+    0x562dd156372b: test r10d, r10d
+    0x562dd156372e: je 0x562dd1563744

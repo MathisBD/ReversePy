@@ -1,0 +1,85 @@
+    0x562dd1563744: movzx edx, word ptr [r12]
+{'opcodes': ['41', 'f', 'b7', '14', '24'], 'regs': {'r12': '7f84cdffa4d4', 'rip': '562dd1563744', 'eflags': '562d00000246'}, 'reads': [{'addr': '7f84cdffa4d4', 'size': '2', 'value': '1271'}]}
+
+[+] Tainted edx
+    0x562dd1563749: add r12, 2
+{'opcodes': ['49', '83', 'c4', '2'], 'regs': {'r12': '7f84cdffa4d4', 'rip': '562dd1563749', 'eflags': '562d00000246'}}
+
+[+] 0x562dd156374d: movzx r13d, dl
+{'opcodes': ['44', 'f', 'b6', 'ea'], 'regs': {'rdx': '1271', 'rip': '562dd156374d', 'eflags': '562d00000202'}}
+
+[+] 0x562dd1563751: movzx edx, dh
+{'opcodes': ['f', 'b6', 'd6'], 'regs': {'rdx': '1271', 'rip': '562dd1563751', 'eflags': '562d00000202'}}
+
+[+] 0x562dd1563754: cmp r13d, 0xa3
+{'opcodes': ['41', '81', 'fd', 'a3', '0', '0', '0'], 'regs': {'r13': '71', 'rip': '562dd1563754', 'eflags': '562d00000202'}}
+
+[+] 0x562dd156375b: ja 0x562dd1563e38
+{'opcodes': ['f', '87', 'd7', '6', '0', '0'], 'regs': {'rip': '562dd156375b', 'eflags': '562d00000293'}}
+
+[+] 0x562dd1563761: lea rcx, [rip + 0x22caa8]
+{'opcodes': ['48', '8d', 'd', 'a8', 'ca', '22', '0'], 'regs': {'rip': '562dd1563761', 'eflags': '562d00000293'}}
+
+[+] 0x562dd1563768: mov eax, r13d
+{'opcodes': ['44', '89', 'e8'], 'regs': {'r13': '71', 'rip': '562dd1563768', 'eflags': '562d00000293'}}
+
+[+] 0x562dd156376b: movsxd rax, dword ptr [rcx + rax*4]
+{'opcodes': ['48', '63', '4', '81'], 'regs': {'rcx': '562dd1790210', 'rax': '71', 'rip': '562dd156376b', 'eflags': '562d00000293'}, 'reads': [{'addr': '562dd17903d4', 'size': '4', 'value': '0'}]}
+
+[+] 0x562dd156376f: add rax, rcx
+{'opcodes': ['48', '1', 'c8'], 'regs': {'rax': 'ffffffffffdd6a63', 'rcx': '562dd1790210', 'rip': '562dd156376f', 'eflags': '562d00000293'}}
+
+[+] 0x562dd1563772: jmp rax
+{'opcodes': ['3e', 'ff', 'e0'], 'regs': {'rax': '562dd1566c73', 'rip': '562dd1563772', 'eflags': '562d00000203'}}
+
+[+] 0x562dd1566c73: mov r11d, edx
+{'opcodes': ['41', '89', 'd3'], 'regs': {'rdx': '12', 'rip': '562dd1566c73', 'eflags': '562d00000203'}}
+
+    0x562dd1566c76: jmp 0x562dd1564054
+{'opcodes': ['e9', 'd9', 'd3', 'ff', 'ff'], 'regs': {'rip': '562dd1566c76', 'eflags': '562d00000203'}}
+
+[+] 0x562dd1564054: movsxd r12, r11d
+{'opcodes': ['4d', '63', 'e3'], 'regs': {'r11': '12', 'rip': '562dd1564054', 'eflags': '562d00000203'}}
+
+[+] 0x562dd1564057: and r12, 0xfffffffffffffffe
+{'opcodes': ['49', '83', 'e4', 'fe'], 'regs': {'r12': '12', 'rip': '562dd1564057', 'eflags': '562d00000203'}}
+
+[+] 0x562dd156405b: add r12, qword ptr [rsp + 8]
+{'opcodes': ['4c', '3', '64', '24', '8'], 'regs': {'r12': '12', 'rsp': '7ffe5d352910', 'rip': '562dd156405b', 'eflags': '562d00000206'}, 'reads': [{'addr': '7ffe5d352918', 'size': '8', 'value': '0'}]}
+
+    0x562dd1564060: jmp 0x562dd156365e
+{'opcodes': ['e9', 'f9', 'f5', 'ff', 'ff'], 'regs': {'rip': '562dd1564060', 'eflags': '562d00000202'}}
+
+    0x562dd156365e: mov eax, dword ptr [rip + 0x32f92c]
+{'opcodes': ['8b', '5', '2c', 'f9', '32', '0'], 'regs': {'rip': '562dd156365e', 'eflags': '562d00000202'}, 'reads': [{'addr': '562dd1892f90', 'size': '4', 'value': '0'}]}
+
+    0x562dd1563664: test eax, eax
+{'opcodes': ['85', 'c0'], 'regs': {'rax': '0', 'rip': '562dd1563664', 'eflags': '562d00000202'}}
+
+    0x562dd1563666: je 0x562dd1563710
+{'opcodes': ['f', '84', 'a4', '0', '0', '0'], 'regs': {'rip': '562dd1563666', 'eflags': '562d00000246'}}
+
+    0x562dd1563710: lea r14, [rip + 0x3084c9]
+{'opcodes': ['4c', '8d', '35', 'c9', '84', '30', '0'], 'regs': {'rip': '562dd1563710', 'eflags': '562d00000246'}}
+
+    0x562dd1563717: mov r10d, dword ptr [rip + 0x32f86e]
+{'opcodes': ['44', '8b', '15', '6e', 'f8', '32', '0'], 'regs': {'rip': '562dd1563717', 'eflags': '562d00000246'}, 'reads': [{'addr': '562dd1892f8c', 'size': '4', 'value': '0'}]}
+
+[+] 0x562dd156371e: mov rsi, r12
+{'opcodes': ['4c', '89', 'e6'], 'regs': {'r12': '7f84cdffa4c2', 'rip': '562dd156371e', 'eflags': '562d00000246'}}
+
+[+] 0x562dd1563721: sub rsi, qword ptr [rsp + 8]
+{'opcodes': ['48', '2b', '74', '24', '8'], 'regs': {'rsi': '7f84cdffa4c2', 'rsp': '7ffe5d352910', 'rip': '562dd1563721', 'eflags': '562d00000246'}, 'reads': [{'addr': '7ffe5d352918', 'size': '8', 'value': '0'}]}
+
+[+] 0x562dd1563726: mov dword ptr [rbx + 0x68], esi
+{'opcodes': ['89', '73', '68'], 'regs': {'rbx': '7f84ce976440', 'rsi': '12', 'rip': '562dd1563726', 'eflags': '562d00000206'}}
+
+[+] 0x562dd1563729: mov edx, esi
+{'opcodes': ['89', 'f2'], 'regs': {'rsi': '12', 'rip': '562dd1563729', 'eflags': '562d00000206'}}
+
+    0x562dd156372b: test r10d, r10d
+{'opcodes': ['45', '85', 'd2'], 'regs': {'r10': '0', 'rip': '562dd156372b', 'eflags': '562d00000206'}}
+
+    0x562dd156372e: je 0x562dd1563744
+{'opcodes': ['74', '14'], 'regs': {'rip': '562dd156372e', 'eflags': '562d00000246'}}
+

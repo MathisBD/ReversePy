@@ -153,7 +153,7 @@ void CFG::resetDfsStates()
 void CFG::writeDotGraph(FILE* file, uint32_t maxBBSize)
 {
     // dotty crashes if node labels are too long (it detects a stack smashing - 
-    // labels must be read into a stack allocated buffer without checking for size lol).
+    // labels must be read into a stack allocated buffer without checking for size lol)
 
     fprintf(file, "digraph {\n");
     fprintf(file, "\tsplines=ortho\n");
@@ -169,8 +169,7 @@ void CFG::writeDotGraph(FILE* file, uint32_t maxBBSize)
                 if (i != prevPrinted + 1 && i > 0) {
                     fprintf(file, ".....\\l");
                 }
-                fprintf(file, "0x%lx: [%u] %s\\l", bb->instrs[i]->addr, 
-                    bb->instrs[i]->execCount, bb->instrs[i]->disassembly.c_str());
+                fprintf(file, "%s\\l", bb->instrs[i]->disassembly.c_str());
                 prevPrinted = i;
             }
         }
