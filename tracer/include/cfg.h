@@ -18,6 +18,7 @@ public:
     uint32_t size;
     size_t opcodesCount;
     uint8_t opcodes[16];
+    uint32_t xedOpcode;
     uint32_t execCount;
     bool isMemRead;
     std::string disassembly;

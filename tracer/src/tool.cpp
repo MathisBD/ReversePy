@@ -29,36 +29,41 @@ static std::string progName;
 
 // the trace of the current instruction
 static TraceElement traceEle;
+static std::vector<TraceElement> completeTrace;
 // maps opcode -> list of traces.
 // Each entry is a pair of indices, [start, end] in the complete trace.
 static std::vector<std::pair<uint64_t, uint64_t>> opcodeTraces[256];
 
 
-// called by PIN
+// called by PIN, BEFORE the read
 void recordMemRead(ADDRINT memAddr, UINT32 memSize)
 {
     if (progRunning) {
         uint64_t value;
         memmove(&value, (void*)memAddr, memSize);
         value &= (1 << (8*memSize)) - 1; // zero out the irrelevant part
-        traceEle.reads[traceEle.readsCount++] = 
-            MemoryAccess((uint64_t)memAddr, (uint64_t)memSize, value);
+        traceEle.reads.emplace_back((uint64_t)memAddr, (uint8_t)memSize, value);
     }
 }
 
-// called by PIN
-void recordRegRead(REG reg, ADDRINT val)
+
+// called by PIN, before the write (so we don't have access yet to what will be writte)
+void recordMemWrite(ADDRINT memAddr, UINT32 memSize)
 {
     if (progRunning) {
-        traceEle.regs[traceEle.regsCount++] = std::make_pair(reg, val);
+        traceEle.writes.emplace_back((uint64_t)memAddr, (uint8_t)memSize, 0);
     }
 }
 
 static inline void saveOpcodes(uint64_t insAddr, uint32_t insSize)
 {
-    traceEle.opcodesCount = PIN_SafeCopy((void*)traceEle.opcodes, (void*)insAddr, insSize);
-    if (traceEle.opcodesCount < insSize) {
+    uint8_t buf[16];
+    uint32_t count = PIN_SafeCopy((void*)buf, (void*)insAddr, insSize);
+    if (count < insSize) {
         panic("couldn't get opcodes for instr at address 0x%lx\n", insAddr);
+    }
+    for (uint32_t i = 0; i < count; i++) {
+        traceEle.opcodes.push_back(buf[i]);
     }
 }
 
@@ -66,7 +71,7 @@ static inline void saveReg(REG reg, const CONTEXT* ctx)
 {
     uint64_t value;
     PIN_GetContextRegval(ctx, reg, (uint8_t*)(&value));
-    traceEle.regs[traceEle.regsCount++] = std::make_pair(reg, value);
+    traceEle.regs.push_back(std::make_pair(reg, value));
 }
 
 // called by PIN.
@@ -76,15 +81,34 @@ void dumpTraceElement(Instruction* instr, const CONTEXT* ctx)
     if (progRunning) {
         (instr->execCount)++;
         saveOpcodes(instr->addr, instr->size);
+        if (instr->xedOpcode == XED_ICLASS_MOVZX) {
+            saveReg(REG_RAX, ctx);
+            saveReg(REG_RBX, ctx);
+            saveReg(REG_RCX, ctx);
+            saveReg(REG_RDX, ctx);
+            saveReg(REG_RSI, ctx);
+            saveReg(REG_RDI, ctx);
+            saveReg(REG_RSP, ctx);
+            saveReg(REG_RBP, ctx);
+            saveReg(REG_R8, ctx);
+            saveReg(REG_R9, ctx);
+            saveReg(REG_R10, ctx);
+            saveReg(REG_R11, ctx);
+            saveReg(REG_R12, ctx);
+            saveReg(REG_R13, ctx);
+            saveReg(REG_R14, ctx);
+            saveReg(REG_R15, ctx);
+        }
         saveReg(REG_RIP, ctx);
         saveReg(REG_EFLAGS, ctx);
-        traceEle.toJson(traceDumpStream);
-        traceDumpStream << "\n";
+        traceEle.instr = instr;
+        completeTrace.push_back(traceEle);
 
         // reset the traceElement for the next instruction
-        traceEle.opcodesCount = 0;
-        traceEle.regsCount = 0;
-        traceEle.readsCount = 0;
+        traceEle.opcodes.clear();
+        traceEle.regs.clear();
+        traceEle.reads.clear();
+        traceEle.writes.clear();
     }
 }
 
@@ -129,6 +153,7 @@ void insCallback(INS ins, void* v)
         if (instr->opcodesCount < instr->size) {
             panic("couldn't get opcodes for instr at address 0x%lx\n", instr->addr);
         }
+        instr->xedOpcode = INS_Opcode(ins);
         instr->execCount = 0;
         instr->isMemRead = INS_IsMemoryRead(ins);
         instr->disassembly = INS_Disassemble(ins);    
@@ -155,21 +180,10 @@ void insCallback(INS ins, void* v)
             IARG_PTR, instr,
             IARG_CONST_CONTEXT,
             IARG_END);
-        // record register reads
-        uint32_t regCount = INS_MaxNumRRegs(ins);
-        for (uint32_t i = 0; i < regCount; i++) {
-            REG reg = INS_RegR(ins, i);
-            if (REG_valid(reg) && REG_is_gr(REG_FullRegName(reg))) {
-                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)recordRegRead,
-                    IARG_CALL_ORDER, CALL_ORDER_DEFAULT, // before dumpTrace()
-                    IARG_UINT32, REG_FullRegName(reg),
-                    IARG_REG_VALUE, REG_FullRegName(reg),
-                    IARG_END);
-            }
-        }
-        // record memory reads
+        // record memory reads and writes
         uint32_t memOpCount = INS_MemoryOperandCount(ins);
         for (uint32_t memOp = 0; memOp < memOpCount; memOp++) {
+            // read : before the instruction executes
             if (INS_MemoryOperandIsRead(ins, memOp)) {
                 // predicated means the function is not called
                 // if the predicate (e.g. for movcc) is false.
@@ -178,6 +192,15 @@ void insCallback(INS ins, void* v)
                     IARG_CALL_ORDER, CALL_ORDER_DEFAULT, // before dumpTrace()
                     IARG_MEMORYOP_EA, memOp, 
                     IARG_MEMORYREAD_SIZE,
+                    IARG_END);
+            }
+            // write : also before the instruction executes
+            if (INS_MemoryOperandIsWritten(ins, memOp)) {
+                INS_InsertPredicatedCall(
+                    ins, IPOINT_BEFORE, (AFUNPTR)recordMemWrite,
+                    IARG_CALL_ORDER, CALL_ORDER_DEFAULT, // before dumpTrace()
+                    IARG_MEMORYOP_EA, memOp, 
+                    IARG_MEMORYWRITE_SIZE,
                     IARG_END);
             }
         }
@@ -200,6 +223,58 @@ void removeDeadInstrs()
         }
     }
 }
+
+// the fetch is a movzx that reads 2 bytes in memory
+// and is executed a lot
+bool isFetch(const TraceElement& te)
+{
+    if (te.instr->xedOpcode != XED_ICLASS_MOVZX) {
+        return false;
+    }
+    if (te.instr->execCount < 5000) {
+        return false;
+    }
+    for (const MemoryAccess& read : te.reads) {
+        if (read.size == 2) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void saveTrace(const std::vector<TraceElement>& trace)
+{
+    if (trace.size() == 0) {
+        return;
+    }
+    traceDumpStream << "[";
+    for (size_t i = 0; i < trace.size(); i++) {
+        if (i > 0) {
+            traceDumpStream << ", ";
+        }
+        trace[i].toJson(traceDumpStream);
+    }
+    traceDumpStream << "]\n";
+}
+
+void dumpTraces()
+{
+    std::vector<TraceElement> currTrace;
+    bool foundFetch = false;
+    for (const TraceElement& te : completeTrace) {
+        if (isFetch(te)) {
+            // save the current trace
+            saveTrace(currTrace);
+            // start a new trace
+            currTrace.clear();
+            foundFetch = true;
+        }
+        if (foundFetch) {
+            currTrace.push_back(te);
+        }
+    }
+}
+
 
 void dumpInstrList()
 {
@@ -231,9 +306,12 @@ void dumpInstrList()
 // have been closed (for PROG=ls at least).
 void finiCallback(int code, void* v)
 {
+    printf("[+] Writting output\n");
     removeDeadInstrs();
+    dumpTraces();
     dumpInstrList();
-    
+    printf("[+] Done\n");
+
     // close the log files
     fclose(codeDumpFile);
     fclose(imgFile);

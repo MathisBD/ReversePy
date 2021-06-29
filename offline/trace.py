@@ -10,7 +10,8 @@ class TraceExtractor:
         self.md = cap.Cs(cap.CS_ARCH_X86, cap.CS_MODE_64)
         self.exec_count = defaultdict(lambda: 0)
         self.fetch_addr = 0
-        
+        self.reached_trace_eof = False 
+
     def __del__(self):
         self.trace_file.close()
         self.code_file.close()
@@ -56,7 +57,6 @@ class TraceExtractor:
             instr = json.loads(line)
             addr = TraceExtractor.instr_addr(instr)
             if self.is_possible_fetch(instr) and self.exec_count[addr] >= fetch_freq_threshold:
-                #print(instr)
                 fetches.add(addr)
             
         fetches = list(fetches)
@@ -100,10 +100,10 @@ class TraceExtractor:
             line = self.trace_file.readline()
             # end of file
             if len(line) == 0:
+                self.reached_trace_eof = True
                 return trace
             instr = json.loads(line)
             if TraceExtractor.instr_addr(instr) == self.fetch_addr:
                 self.trace_file.seek(ofs, os.SEEK_SET)
                 return trace 
             trace.append(instr)
-
