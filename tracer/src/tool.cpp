@@ -261,18 +261,25 @@ void dumpTraces()
 {
     std::vector<TraceElement> currTrace;
     bool foundFetch = false;
+    printf("\ttotal size: %lu\n", completeTrace.size());
     for (const TraceElement& te : completeTrace) {
         if (isFetch(te)) {
-            // save the current trace
-            saveTrace(currTrace);
+            if (foundFetch) {
+                // save the current trace
+                saveTrace(currTrace);
+            } 
+            else {
+                // don't save the header
+                printf("\theader size: %lu\n", currTrace.size());
+            }
             // start a new trace
             currTrace.clear();
             foundFetch = true;
         }
-        if (foundFetch) {
-            currTrace.push_back(te);
-        }
+        currTrace.push_back(te);
     }
+    // don't save the footer
+    printf("\tfooter size: %lu\n", currTrace.size());
 }
 
 

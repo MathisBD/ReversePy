@@ -7,7 +7,7 @@ TOOL=obj-intel64/tool.so
 
 PROG?=ls
 
-# example usage : make PROG="python3 prog.py"
+# example usage : make -s PROG="python prog.py"
 all:
 # build
 	mkdir -p obj-intel64 
@@ -18,7 +18,6 @@ all:
 
 clean:
 	rm -f -r obj-intel64
-	rm -f -r $(OUTPUT_DIR)
 	rm -f pin.log pintool.log
 	rm -f tototo tototo_after
 	rm -f tmp*

@@ -1,0 +1,27 @@
+[+] Reg info :
+	rax: 	align=0x01	distinct values=    45	max_stack_streak=     8	max_instr_streak=     0	write count=    38
+	rbx: 	align=0x10	distinct values=     9	max_stack_streak= 10005	max_instr_streak=     0	write count=     9
+	rcx: 	align=0x01	distinct values=  1041	max_stack_streak=     3	max_instr_streak=     0	write count=    88
+	rdx: 	align=0x02	distinct values=   115	max_stack_streak=     1	max_instr_streak=    20	write count=     0
+	rsi: 	align=0x02	distinct values=   115	max_stack_streak=     1	max_instr_streak=    20	write count=     0
+	rdi: 	align=0x01	distinct values=  1573	max_stack_streak=     3	max_instr_streak=     0	write count=  1304
+	rsp: 	align=0x10	distinct values=     9	max_stack_streak= 10005	max_instr_streak=     0	write count=     9
+	rbp: 	align=0x20	distinct values=     1	max_stack_streak= 10168	max_instr_streak=     0	write count=     0
+	r8: 	align=0x01	distinct values=   318	max_stack_streak=     5	max_instr_streak=     0	write count=   282
+	r9: 	align=0x01	distinct values=    25	max_stack_streak=    14	max_instr_streak=     0	write count=    13
+	r10: 	align=0x00	distinct values=     1	max_stack_streak= 10168	max_instr_streak=     0	write count=     0
+	r11: 	align=0x01	distinct values=    38	max_stack_streak=    10	max_instr_streak=     0	write count=     8
+	r12: 	align=0x02	distinct values=   179	max_stack_streak=     1	max_instr_streak=    20	write count=     0
+	r13: 	align=0x01	distinct values=  1305	max_stack_streak=     1	max_instr_streak=     1	write count=  1281
+	r14: 	align=0x20	distinct values=     1	max_stack_streak= 10168	max_instr_streak=     0	write count=     0
+	r15: 	align=0x08	distinct values=    39	max_stack_streak= 10005	max_instr_streak=     0	write count=    31
+[+] Stack ptr candidates:  {'r15'}
+[+] Instr ptr candidates:  {'r12', 'rdx', 'rsi'}
+	Didn't find the instruction pointer ! Continuing.
+[+] Big reg changes :
+	r15:	 [90, 93, 99, 103, 108, 118, 119, 126, 134, 138, 154, 162]
+	r12:	 [89, 90, 93, 99, 103, 108, 118, 119, 126, 134, 138, 154, 162]	diff count= 1
+	rdx:	 [89, 90]	diff count= 12
+	rsi:	 [89, 90]	diff count= 12
+[+] Instr ptr candidates:  {'r12'}
+[+] Stack ptr=r15	Instr ptr=r12
