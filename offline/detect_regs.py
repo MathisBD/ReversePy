@@ -1,7 +1,6 @@
 import json
 from typing import NamedTuple
-from bytecode import * 
-from triton import *
+from bytecode import *
 from emulate import *
 import os 
 
@@ -105,20 +104,26 @@ class TraceInfo:
         for reg in self.regs:
             self.reg_changes[reg] = set(big_change_indices(self.reg_vals[reg], 100))
                 
-    def get_write_addrs(self):
-        self.write_addrs = set()
-        def add_write(write):
+    def get_write_times(self):
+        # last_write[addr] is the index of the last bytecode that writes to addr
+        self.last_write = dict()
+
+        def add_write(write, time):
             addr = int(write['addr'], 16)
             size = int(write['size'], 16)
             for i in range(size):
-                self.write_addrs.add(addr + i)
+                if (addr + i) in self.last_write and time > self.last_write[addr + i]:
+                    self.last_write[addr + i] = time
+                else:
+                    self.last_write[addr + i] = time
+
         self.file.seek(0, os.SEEK_SET)
-        for line in self.file:
+        for i, line in enumerate(self.file):
             trace = json.loads(line)
             for instr in trace:
                 if 'writes' in instr.keys():
                     for write in instr['writes']:
-                        add_write(write)                
+                        add_write(write, i)                
 
     def detect_ptrs(self):
         stack_ptr_candidates = set()
@@ -130,18 +135,22 @@ class TraceInfo:
             # basic stats
             distinct_count = len(set(self.reg_vals[reg]))
             align = max_align(self.reg_vals[reg])
-            write_count = len(
-                self.write_addrs & set(self.reg_vals[reg])
-            )
             max_stack_streak = max_delta_streak(self.reg_vals[reg], stack_ofs)
             max_instr_streak = max_delta_streak(self.reg_vals[reg], instr_ofs)
-            print("\t%s: \talign=0x%02x\tdistinct values=%6d\tmax_stack_streak=%6d\tmax_instr_streak=%6d\twrite count=%6d" % \
-                (reg, align, distinct_count, max_stack_streak, max_instr_streak, write_count))
+            # overwrite : we write to an address after reg points to it
+            overwrite_count = 0
+            for r_i, addr in enumerate(self.reg_vals[reg]):
+                if addr in self.last_write:
+                    w_i = self.last_write[addr]
+                    if w_i >= r_i:
+                        overwrite_count += 1
+            print("\t%s: \talign=0x%02x\tdistinct values=%6d\tmax_stack_streak=%6d\tmax_instr_streak=%6d\toverwrite count=%6d" % \
+                (reg, align, distinct_count, max_stack_streak, max_instr_streak, overwrite_count))
             # instr pointer ?
-            if align >= 2 and distinct_count > 10 and max_instr_streak > 10: # and write_count == 0
+            if align >= 2 and distinct_count > 10 and max_instr_streak > 10 and overwrite_count == 0:
                 instr_ptr_candidates.add(reg)
             # stack pointer ?
-            if align >= 8 and distinct_count > 10 and max_stack_streak > 10 and write_count > 0:
+            if align >= 8 and distinct_count > 10 and max_stack_streak > 10 and overwrite_count > 10:
                 stack_ptr_candidates.add(reg)
         
         # stack pointer
@@ -235,7 +244,7 @@ if __name__ == "__main__":
     """
     # registers
     ti.get_reg_values()
-    ti.get_write_addrs()
+    ti.get_write_times()
     ti.detect_ptrs()
     ti.detect_frames()
     
