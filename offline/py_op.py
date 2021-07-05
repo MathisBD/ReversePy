@@ -6,6 +6,8 @@ def argFromBytecode(bc):
     return (bc >> 8) & 0xFF
 
 # list pulled from https://github.com/python/cpython/blob/3.8/Lib/opcode.py
+# take care to use the file from the correct python version, as opcodes
+# may change in between versions
 opcode_name_dict = {
     0x01: "POP_TOP",
     0x02: "ROT_TWO",

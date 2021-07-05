@@ -16,15 +16,15 @@
 	r14: 	align=0x20	distinct values=     1	max_stack_streak=     0	max_instr_streak=     0	overwrite count=     0
 	r15: 	align=0x08	distinct values=    45	max_stack_streak=    17	max_instr_streak=     0	overwrite count= 27142
 [+] Stack ptr candidates:  {'r15'}
-[+] Instr ptr candidates:  {'rsi', 'r12', 'rdx'}
+[+] Instr ptr candidates:  {'rdx', 'r12', 'rsi'}
 	Didn't find the instruction pointer ! Continuing.
 [+] Big reg changes :
 	r15:	 [90, 93, 99, 103, 108, 118, 119, 126, 134, 140, 158, 166, 171, 176, 183, 186, 192, 198, 203, 208, 215, 218, 224, 230, 235, 240, 247, 250, 256, 262, 267, 272, 279, 282, 288, 294, 299, 304, 311, 314, 320, 326, 331, 336, 343, 346, 352, 358, 363, 368]
-	rsi:	 [89, 90]
+	rdx:	 [89, 90]
 		diff count= 6011
 	r12:	 [89, 90, 93, 99, 103, 108, 118, 119, 126, 134, 140, 158, 166, 171, 176, 183, 186, 192, 198, 203, 208, 215, 218, 224, 230, 235, 240, 247, 250, 256, 262, 267, 272, 279, 282, 288, 294, 299, 304, 311, 314, 320, 326, 331, 336, 343, 346, 352, 358, 363]
 		diff count= 1
-	rdx:	 [89, 90]
+	rsi:	 [89, 90]
 		diff count= 6011
 [+] Instr ptr candidates:  {'r12'}
 [+] Frame changes : [90, 93, 99, 103, 108, 118, 119, 126, 134, 140, 158, 166, 171, 176, 183, 186, 192, 198, 203, 208, 215, 218, 224, 230, 235, 240, 247, 250, 256, 262, 267, 272, 279, 282, 288, 294, 299, 304, 311, 314, 320, 326, 331, 336, 343, 346, 352, 358, 363, 368]
@@ -38,11 +38,13 @@
 		sp <- sp - 0x8
 	RAISE_VARARGS:
 		ip <- ip + 0x374
-		ip <- new-block
+		ip <- block-entry
 		sp <- sp + 0x28
 	CALL_FUNCTION:
 		ip <- ip + 0x2
-		ip <- new-block
+		ip <- block-entry
+		sp <- sp - 0x8
+		sp <- sp - 0x10
 	MAKE_FUNCTION:
 		ip <- ip + 0x2
 		sp <- sp - 0x8
@@ -61,6 +63,8 @@
 		sp <- sp - 0x18
 	EXTENDED_ARG:
 		ip <- ip + 0x4
+		sp <- sp + 0x8
+		sp <- sp - 0x8
 	BINARY_MULTIPLY:
 		ip <- ip + 0x2
 		sp <- sp - 0x8
@@ -80,7 +84,10 @@
 		sp <- sp + 0x8
 	CALL_METHOD:
 		ip <- ip + 0x2
-		ip <- new-block
+		ip <- block-entry
+		sp <- sp - 0x18
+		sp <- sp - 0x8
+		sp <- sp - 0x10
 	INPLACE_ADD:
 		ip <- ip + 0x2
 		sp <- sp - 0x8
@@ -94,13 +101,18 @@
 		ip <- ip + 0x2
 		sp <- sp + 0x8
 	WITH_CLEANUP_START:
-		ip <- new-block
+		ip <- block-entry
 	RETURN_VALUE:
-		ip <- new-block
+		ip <- block-entry
 	POP_BLOCK:
 		ip <- ip + 0x2
 	STORE_NAME:
 		ip <- ip + 0x2
+		sp <- sp - 0x8
+	FOR_ITER:
+		ip <- ip + 0x2
+		ip <- ip + 0x16
+		sp <- sp + 0x8
 		sp <- sp - 0x8
 	STORE_ATTR:
 		ip <- ip + 0x2
@@ -113,8 +125,21 @@
 		sp <- sp + 0x8
 	LOAD_ATTR:
 		ip <- ip + 0x2
+	COMPARE_OP:
+		ip <- ip + 0x2
+		ip <- ip + 0x16
+		sp <- sp - 0x10
+		sp <- sp - 0x8
+	JUMP_FORWARD:
+		ip <- ip + 0x28
+		ip <- ip + 0x18
+		ip <- ip + 0x2a
 	JUMP_ABSOLUTE:
 		ip <- ip - 0x14
+	POP_JUMP_IF_TRUE:
+		ip <- ip + 0xa
+		ip <- ip + 0x2
+		sp <- sp - 0x8
 	LOAD_GLOBAL:
 		ip <- ip + 0x2
 		sp <- sp + 0x8
@@ -125,8 +150,6 @@
 		sp <- sp + 0x8
 	STORE_FAST:
 		ip <- ip + 0x2
-		sp <- sp - 0x8
-	POP_JUMP_IF_TRUE:
 		sp <- sp - 0x8
 [+] Instr blocks:
 	0 <0x7f6b43ed91d0 ... 0x7f6b43ed9200> : ['0x7f6b43ed91d0', '0x7f6b43ed91d2', '0x7f6b43ed91d4', '0x7f6b43ed91d6', '0x7f6b43ed91d8', '0x7f6b43ed91da', '0x7f6b43ed91dc', '0x7f6b43ed91f4', '0x7f6b43ed91f6', '0x7f6b43ed91f8', '0x7f6b43ed91fa', '0x7f6b43ed91fc', '0x7f6b43ed91fe', '0x7f6b43ed9200']

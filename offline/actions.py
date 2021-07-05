@@ -15,14 +15,14 @@ class RelJmp(Action):
 # IP <- entry(block k)
 class BlockJmp(Action):
     def __repr__(self):
-        return "ip <- block-entry"
+        return "ip <- new-block"
 
 # SP <- SP + k
 class SpOfs(Action):
     def __init__(self, ofs):
         self.ofs = ofs 
     def __repr__(self):
-        if self.ofs > 0:
+        if self.ofs >= 0:
             return "sp <- sp + 0x%x" % self.ofs 
         else:
             return "sp <- sp - 0x%x" % abs(self.ofs)
