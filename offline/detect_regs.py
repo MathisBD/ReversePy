@@ -1,5 +1,4 @@
 import json
-from typing import NamedTuple
 from bytecode import *
 from emulate import *
 import os 
@@ -128,7 +127,9 @@ class TraceInfo:
     def detect_ptrs(self):
         stack_ptr_candidates = set()
         instr_ptr_candidates = set()
-        stack_ofs = [-16, -8, 0, 8, 16]
+        # If I add 0, the frame pointers (that stay the same for 
+        # long periods of time) would be included too.
+        stack_ofs = [-16, -8, 8, 16] 
         instr_ofs = [2]
         print("[+] Reg info :")
         for reg in self.regs:
@@ -150,6 +151,7 @@ class TraceInfo:
             if align >= 2 and distinct_count > 10 and max_instr_streak > 10 and overwrite_count == 0:
                 instr_ptr_candidates.add(reg)
             # stack pointer ?
+            # don't be too greedy for the max_stack_streak, I excluded 0 from the possible offsets
             if align >= 8 and distinct_count > 10 and max_stack_streak > 10 and overwrite_count > 10:
                 stack_ptr_candidates.add(reg)
         
@@ -169,12 +171,12 @@ class TraceInfo:
 
             # try to match the big changes of the stack pointer and of the instr pointer
             print("[+] Big reg changes :")
-            print("\t%s:\t" % self.sp, sorted(self.reg_changes[self.sp]))
+            print("\t%s:\t" % self.sp, sorted(self.reg_changes[self.sp])[:50])
             diff = dict()
             for reg in instr_ptr_candidates:
                 # ^ is symmetric difference
                 diff[reg] = self.reg_changes[reg] ^ self.reg_changes[self.sp]
-                print("\t%s:\t" % reg, sorted(self.reg_changes[reg]))
+                print("\t%s:\t" % reg, sorted(self.reg_changes[reg])[:50])
                 print("\t\tdiff count= %d" % len(diff[reg]))
             instr_ptr_candidates = set(filter(
                 lambda reg: len(diff[reg]) / float(len(self.reg_changes[self.sp]) + len(self.reg_changes[reg])) < 0.2,
@@ -190,8 +192,10 @@ class TraceInfo:
         
     def detect_frames(self):
         # frame changes
-        self.frame_changes = self.reg_changes[self.sp] & self.reg_changes[self.ip]
-        print("[+] Frame changes :", sorted(self.frame_changes))
+        # for recursive functions, the frame changes but only sp (not ip) changes
+        #self.frame_changes = self.reg_changes[self.sp] & self.reg_changes[self.ip]
+        self.frame_changes = self.reg_changes[self.sp]
+        print("[+] Frame changes :", sorted(self.frame_changes)[:50])
         # try to detect the frame pointer
         change_count = { reg: 0 for reg in self.regs }
         stay_count = { reg: 0 for reg in self.regs }
@@ -217,13 +221,14 @@ class TraceInfo:
                 print("\t%s:\tchange=%d\tstay=%d" % (reg, change_count[reg], stay_count[reg]))
 
         print("[+] Frame ptr candidates: ", frame_ptr_candidates)
+        """
         for reg in frame_ptr_candidates:
             print("\t%s changes:" % reg)
             for i in sorted(self.frame_changes):
                 print("\t\t%d: 0x%x -> 0x%x (delta=%x)" % 
                     (i, self.reg_vals[reg][i], self.reg_vals[reg][i+1], 
                     self.reg_vals[reg][i+1] - self.reg_vals[reg][i]))
-        
+        """
         self.fp = list(frame_ptr_candidates)
 
 
@@ -237,14 +242,38 @@ if __name__ == "__main__":
     ti = TraceInfo("../tracer/output/traceDump")
     # bytecode
     ti.get_bytecode()
-    """
-    for i, bc in enumerate(ti.bytecode):
-        opc, arg = bc
-        print("%d: %s %x" % (i, opcodeName(opc), arg))  
-    """
+    
     # registers
     ti.get_reg_values()
     ti.get_write_times()
     ti.detect_ptrs()
     ti.detect_frames()
     
+    """
+    print("Bytecode:")
+    for i, bc in enumerate(ti.bytecode):
+        opc, arg = bc
+        if i in ti.frame_changes:
+            print("--> ", end="")
+        else:
+            print("    ", end="") 
+        print("%d: %s 0x%x" % (i, opcodeName(opc), arg))
+    """
+
+    print("Bytecode:")
+    frames = dict()
+    f = 0
+    ti.file.seek(0)
+    for i, line in enumerate(ti.file):
+        trace = json.loads(line)
+        opc, arg = ti.bytecode[i]
+        regs = trace[0]['regs']
+
+        fp_val = int(regs[ti.fp[0]], 16)
+        if fp_val not in frames.keys():
+            frames[fp_val] = f
+            f += 1
+
+        if i in ti.frame_changes:
+            print("[%d] %d: %s %d" % (frames[fp_val], i, opcodeName(opc), arg))
+       
