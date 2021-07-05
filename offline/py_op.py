@@ -1,5 +1,4 @@
 
-
 def opcodeFromBytecode(bc):
     return bc & 0xFF
 
@@ -8,7 +7,7 @@ def argFromBytecode(bc):
 
 # list pulled from https://github.com/python/cpython/blob/3.8/Lib/opcode.py
 opcode_name_dict = {
-    0x01: "POP_TWO",
+    0x01: "POP_TOP",
     0x02: "ROT_TWO",
     0x04: "DUP_TOP",
     0x0b: "UNARY_NEGATIVE",
@@ -60,3 +59,24 @@ def opcodeName(opcode):
         return opcode_name_dict[opcode]
     else:
         return ""
+
+# A python instruction.
+# We can't keep the instruction whole trace in memory,
+# as it wouldn't fit in RAM.
+class PyOp:
+    def __init__(self, trace):
+        fetch = trace[0]
+        found = 0
+        if 'reads' in fetch.keys():
+            for read in fetch['reads']:
+                if int(read['size'], 16) == 2:
+                    self.bc = int(read['value'], 16)
+                    found += 1
+        if found != 1:
+            raise Exception("the trace doesn't have a valid fetch")
+        
+        self.opc = opcodeFromBytecode(self.bc)
+        self.arg = argFromBytecode(self.bc) 
+        self.regs = { reg: int(val, 16) for reg, val in fetch['regs'].items() }
+        self.frame = -1
+                    

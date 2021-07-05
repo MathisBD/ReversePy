@@ -1,5 +1,5 @@
 import json
-from bytecode import *
+from py_op import *
 from emulate import *
 import os 
 
@@ -63,7 +63,7 @@ class TraceInfo:
             'rax', 'rbx', 'rcx', 'rdx', 'rsi', 'rdi', 'rsp', 'rbp', 
             'r8', 'r9', 'r10', 'r11', 'r12', 'r13', 'r14', 'r15'
         ]
-        self.bytecode = []      # the list of all opcodes+args the program contains
+        self.py_ops = []        # the list of all py_ops the program contains
         self.ip = ''            # instruction pointer 
         self.sp = ''            # stack pointer
         self.fp = ''            # frame pointer(s) 
@@ -72,22 +72,11 @@ class TraceInfo:
     def __del__(self):
         self.file.close()
 
-    def get_bytecode(self):
+    def get_py_ops(self):
         self.file.seek(0, os.SEEK_SET)
         for line in self.file:
             trace = json.loads(line)
-            fetch = trace[0]
-            found = 0
-            if 'reads' in fetch.keys():
-                for read in fetch['reads']:
-                    if int(read['size'], 16) == 2:
-                        bytecode = int(read['value'], 16)
-                        opc = opcodeFromBytecode(bytecode)
-                        arg = argFromBytecode(bytecode) 
-                        self.bytecode.append((opc, arg))
-                        found += 1
-            if found != 1:
-                raise Exception("the trace doesn't have a valid fetch")
+            self.py_ops.append(PyOp(trace))
 
     def get_reg_values(self):
         # reg values
@@ -104,7 +93,7 @@ class TraceInfo:
             self.reg_changes[reg] = set(big_change_indices(self.reg_vals[reg], 100))
                 
     def get_write_times(self):
-        # last_write[addr] is the index of the last bytecode that writes to addr
+        # last_write[addr] is the index of the last py_op that writes to addr
         self.last_write = dict()
 
         def add_write(write, time):
@@ -193,14 +182,14 @@ class TraceInfo:
     def detect_frames(self):
         # frame changes
         # for recursive functions, the frame changes but only sp (not ip) changes
-        #self.frame_changes = self.reg_changes[self.sp] & self.reg_changes[self.ip]
         self.frame_changes = self.reg_changes[self.sp]
         print("[+] Frame changes :", sorted(self.frame_changes)[:50])
+        
         # try to detect the frame pointer
         change_count = { reg: 0 for reg in self.regs }
         stay_count = { reg: 0 for reg in self.regs }
         for reg in self.regs:
-            for i in range(len(self.bytecode) - 1):
+            for i in range(len(self.py_ops) - 1):
                 d = self.reg_vals[reg][i+1] - self.reg_vals[reg][i]
                 # we want the value to change
                 if i in self.frame_changes:
@@ -211,7 +200,7 @@ class TraceInfo:
                     if d == 0:
                         stay_count[reg] += 1 
         goal_change_count = len(self.frame_changes)
-        goal_stay_count = len(self.bytecode) - len(self.frame_changes) - 1 # -1 because we don't count the last opcode
+        goal_stay_count = len(self.py_ops) - len(self.frame_changes) - 1 # -1 because we don't count the last py_op
         print("\tgoal_change_count=%d\tgoal_stay_count=%d" % (goal_change_count, goal_stay_count))
         frame_ptr_candidates = set()
         for reg in self.regs:
@@ -221,59 +210,70 @@ class TraceInfo:
                 print("\t%s:\tchange=%d\tstay=%d" % (reg, change_count[reg], stay_count[reg]))
 
         print("[+] Frame ptr candidates: ", frame_ptr_candidates)
-        """
-        for reg in frame_ptr_candidates:
-            print("\t%s changes:" % reg)
-            for i in sorted(self.frame_changes):
-                print("\t\t%d: 0x%x -> 0x%x (delta=%x)" % 
-                    (i, self.reg_vals[reg][i], self.reg_vals[reg][i+1], 
-                    self.reg_vals[reg][i+1] - self.reg_vals[reg][i]))
-        """
-        self.fp = list(frame_ptr_candidates)
+        self.fps = list(frame_ptr_candidates)
 
+        # detect the frame each py_op is in
+        frames_by_addr = dict()
+        f = 0
+        for op in self.py_ops:
+            fp0 = op.regs[self.fps[0]]
+            if fp0 not in frames_by_addr.keys():
+                frames_by_addr[fp0] = f
+                f += 1
+            op.frame = frames_by_addr[fp0]
+        self.frame_count = f
 
-if __name__ == "__main__":
-    # The trace file has one trace per line.
-    # A trace consists of all instructions for a single bytecode,
-    # and is encoded as a json object.
-    # You should generally avoid loading the entire trace file at once,
-    # as it can (theoretically) be too big to fit in memory.
-    # Using 'for line in file' is safe as it loads only one line at a time.
-    ti = TraceInfo("../tracer/output/traceDump")
-    # bytecode
-    ti.get_bytecode()
     
-    # registers
-    ti.get_reg_values()
-    ti.get_write_times()
-    ti.detect_ptrs()
-    ti.detect_frames()
-    
-    """
-    print("Bytecode:")
-    for i, bc in enumerate(ti.bytecode):
-        opc, arg = bc
-        if i in ti.frame_changes:
-            print("--> ", end="")
-        else:
-            print("    ", end="") 
-        print("%d: %s 0x%x" % (i, opcodeName(opc), arg))
-    """
+    # Partition the python instructions into blocks according
+    # to their address in memory.
+    # Ideally we want the instruction blocks to match functions 
+    # (i.e. each function corresponds to a single block), 
+    # but we may only be able to associate a function with several 
+    # (non-overlapping) instruction blocks. It should hold that 
+    # a block is included in a function.
+    def detect_instr_blocks(self):
+        # all instructions in a frame are in the same function : 
+        # put them in the same block
+        blocks = [set() for _ in range(self.frame_count)]
+        # build blocks
+        for op in self.py_ops:
+            ip = op.regs[self.ip]
+            blocks[op.frame].add(ip)   
+        # merge overlapping blocks :
+        # I construct the overlap graph (an edge between i-j means blocks i and j overlap),
+        # and use a DFS to get the blocks (each block corresponds to a connected component).
+        overlap = [[False for _ in range(len(blocks))] for _ in range(len(blocks))]
+        for i in range(len(blocks)):
+            for j in range(len(blocks)):
+                a1, b1 = min(blocks[i]), max(blocks[i])
+                a2, b2 = min(blocks[j]), max(blocks[j])
+                if (b1 >= a2 and a1 <= b2) or (b2 >= a1 and a2 <= b1):
+                #if len(blocks[i] & blocks[j]) > 0:
+                    overlap[i][j] = True
+                    overlap[j][i] = True
 
-    print("Bytecode:")
-    frames = dict()
-    f = 0
-    ti.file.seek(0)
-    for i, line in enumerate(ti.file):
-        trace = json.loads(line)
-        opc, arg = ti.bytecode[i]
-        regs = trace[0]['regs']
+        for i in range(len(blocks)):
+            for j in range(len(blocks)):
+                print("%d " % overlap[i][j], end="")
+            print("")
 
-        fp_val = int(regs[ti.fp[0]], 16)
-        if fp_val not in frames.keys():
-            frames[fp_val] = f
-            f += 1
-
-        if i in ti.frame_changes:
-            print("[%d] %d: %s %d" % (frames[fp_val], i, opcodeName(opc), arg))
-       
+        visited = [False for _ in range(len(blocks))]
+        def dfs(i):
+            visited[i] = True
+            b = blocks[i]
+            for j in range(len(blocks)):
+                if overlap[i][j] and not visited[j]:
+                    b = b | dfs(j)
+            return b 
+        self.blocks = []
+        for i in range(len(blocks)):
+            if not visited[i]:
+                self.blocks.append(dfs(i))
+        # calculate the block of each py_op
+        def block_idx(ins_addr):
+            for i, b in enumerate(self.blocks):
+                if ins_addr in b:
+                    return i
+            raise Exception("Invalid instruction address: 0x%x" % ins_addr)
+        for op in self.py_ops:
+            op.block = block_idx(op.regs[self.ip])

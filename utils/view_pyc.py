@@ -8,7 +8,7 @@ def view_pyc_file(path):
     file = open(path, 'rb')
     file.read(16) # header
     code = marshal.load(file)
-    dis.disassemble(code)
+    dis.dis(code)
     file.close()
 
 
