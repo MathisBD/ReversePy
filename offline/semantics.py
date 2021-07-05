@@ -46,7 +46,7 @@ class Semantics:
         for i in range(len(self.ti.py_ops) - 1):
             curr = ti.py_ops[i]
             next = ti.py_ops[i+1]
-            if curr.frame == next.frame:
+            if i not in self.ti.frame_changes:
                 ofs = next.regs[self.ti.sp] - curr.regs[self.ti.sp]
                 if ofs != 0:
                     all_offsets[curr.opc].add(ofs)
@@ -72,6 +72,7 @@ if __name__ == "__main__":
     ti.detect_frames()
     ti.detect_instr_blocks()
 
+    """
     print()
     sem = Semantics(ti)
     sem.compute()
@@ -79,20 +80,27 @@ if __name__ == "__main__":
         print("%s:" % opcodeName(opc))
         for act in actions:
             print("\t%s" % act)
-
+    """
     
-    print("\nInstr blocks:")
-    for b in ti.blocks:
-        print("<0x%x ... 0x%x> :" % (min(b), max(b)), [hex(i) for i in sorted(b)])
+    print("[+] Instr blocks:")
+    for i, bl in enumerate(ti.blocks):
+        print("\t%d <0x%x ... 0x%x> :" % (i, min(bl), max(bl)), [hex(addr) for addr in sorted(bl)])
 
-    print("\nBytecode:")
-    
+    print("[+] Block overlaps:")
+    for i in range(len(ti.blocks)):
+        for j in range(len(ti.blocks)):
+            if i < j:
+                a1, b1 = min(ti.blocks[i]), max(ti.blocks[i])
+                a2, b2 = min(ti.blocks[j]), max(ti.blocks[j])
+                if (a2 <= b1 and a1 <= b2) or (a1 <= b2 and a2 <= b1):
+                    print("\tblocks %d and %d overlap!!!" % (i, j))
+
+    print("[+] Bytecode:")
     for i, op in enumerate(ti.py_ops):
         if (i-1) in ti.frame_changes:
-            print("\nframe=%d block=%d idx=%d" % (op.frame, op.block, i))
+            print("\n\t%d: block=%d" % (i, op.block))
         
-        print("0x%x: [rsp=%d rbx=%d r15=%d): %s %d" % 
-            (op.regs[ti.ip], op.regs['rsp'], op.regs['rbx'], op.regs['r15'], opcodeName(op.opc), op.arg))
+        print("\t0x%x: %s %d" % (op.regs[ti.ip], opcodeName(op.opc), op.arg))
     """
     for i, op in enumerate(ti.py_ops):
         if i in ti.frame_changes:

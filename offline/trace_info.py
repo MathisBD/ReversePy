@@ -2,6 +2,7 @@ import json
 from py_op import *
 from emulate import *
 import os 
+from unionfind import *
 
 # calculate the greatest power of two that divides
 # every value in a list
@@ -211,18 +212,6 @@ class TraceInfo:
 
         print("[+] Frame ptr candidates: ", frame_ptr_candidates)
         self.fps = list(frame_ptr_candidates)
-
-        # detect the frame each py_op is in
-        frames_by_addr = dict()
-        f = 0
-        for op in self.py_ops:
-            fp0 = op.regs[self.fps[0]]
-            if fp0 not in frames_by_addr.keys():
-                frames_by_addr[fp0] = f
-                f += 1
-            op.frame = frames_by_addr[fp0]
-        self.frame_count = f
-
     
     # Partition the python instructions into blocks according
     # to their address in memory.
@@ -232,43 +221,27 @@ class TraceInfo:
     # (non-overlapping) instruction blocks. It should hold that 
     # a block is included in a function.
     def detect_instr_blocks(self):
-        # all instructions in a frame are in the same function : 
-        # put them in the same block
-        blocks = [set() for _ in range(self.frame_count)]
-        # build blocks
+        addrs = set()
         for op in self.py_ops:
             ip = op.regs[self.ip]
-            blocks[op.frame].add(ip)   
-        # merge overlapping blocks :
-        # I construct the overlap graph (an edge between i-j means blocks i and j overlap),
-        # and use a DFS to get the blocks (each block corresponds to a connected component).
-        overlap = [[False for _ in range(len(blocks))] for _ in range(len(blocks))]
-        for i in range(len(blocks)):
-            for j in range(len(blocks)):
-                a1, b1 = min(blocks[i]), max(blocks[i])
-                a2, b2 = min(blocks[j]), max(blocks[j])
-                if (b1 >= a2 and a1 <= b2) or (b2 >= a1 and a2 <= b1):
-                #if len(blocks[i] & blocks[j]) > 0:
-                    overlap[i][j] = True
-                    overlap[j][i] = True
-
-        for i in range(len(blocks)):
-            for j in range(len(blocks)):
-                print("%d " % overlap[i][j], end="")
-            print("")
-
-        visited = [False for _ in range(len(blocks))]
-        def dfs(i):
-            visited[i] = True
-            b = blocks[i]
-            for j in range(len(blocks)):
-                if overlap[i][j] and not visited[j]:
-                    b = b | dfs(j)
-            return b 
-        self.blocks = []
-        for i in range(len(blocks)):
-            if not visited[i]:
-                self.blocks.append(dfs(i))
+            addrs.add(ip)
+        u = UnionFind(addrs)
+        # instructions in the same frame are in the same block
+        for i in range(len(self.py_ops) - 1):
+            if i not in self.frame_changes:
+                curr = self.py_ops[i].regs[self.ip]
+                next = self.py_ops[i+1].regs[self.ip]
+                u.union(curr, next)
+        # instructions close together in memory are in the same block
+        sorted_addrs = sorted(addrs)
+        for i in range(len(sorted_addrs) - 1):
+            curr = sorted_addrs[i]
+            next = sorted_addrs[i+1]
+            if next - curr <= 100:
+                u.union(curr, next)
+        # get the blocks
+        self.blocks = u.get_sets()
+        
         # calculate the block of each py_op
         def block_idx(ins_addr):
             for i, b in enumerate(self.blocks):
