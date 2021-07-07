@@ -9,6 +9,10 @@ import os
 import json
 
 class Semantics:
+    # the maximum absolute value of the offset in jump actions
+    MAX_JUMP_OFS = 0x04
+    # same but for sp actions
+    MAX_SP_OFS = 0x16
     class StateDiff:
         def __init__(self, ip, new_ip, sp, new_sp, block, new_block, frame_changed, arg):
             self.ip = ip 
@@ -19,6 +23,9 @@ class Semantics:
             self.new_block = new_block 
             self.frame_changed = frame_changed
             self.arg = arg 
+            # the value sp takes the next time
+            # control flow returns to self.block
+            self.next_block_sp = None 
 
     def __init__(self, ti):
         self.ti = ti
@@ -29,6 +36,8 @@ class Semantics:
         self.actions = defaultdict(lambda: [])
 
     def compute_diffs(self):
+        # forward pass : collect basic data
+        all_diffs = []
         for i in range(len(self.ti.py_ops) - 1):
             curr = self.ti.py_ops[i]
             next = self.ti.py_ops[i+1]
@@ -43,17 +52,36 @@ class Semantics:
                 arg = curr.arg
             )
             self.diffs[curr.opc].append(diff)
+            all_diffs.append(diff)
+
+        # backward pass : compute next_block_sp
+        sp = [None for _ in range(len(self.ti.blocks))]
+        for d in reversed(all_diffs):
+            d.next_block_sp = sp[d.block]
+            sp[d.block] = d.sp
+
+    def first_action(self, opc, methods):
+        for meth in methods:
+            act = meth(self.diffs[opc])
+            if act is not None:
+                self.actions[opc].append(act)
+                return
 
     def compute_actions(self):
         for opc in self.opcodes:
-            actions = []
-            actions.append(self.jmp_rel(self.diffs[opc]))
-            actions.append(self.jmp_rel_arg(self.diffs[opc]))
-            #actions.append(self.jmp_abs(self.diffs[opc]))
-            self.actions[opc] = list(filter(
-                lambda a: a is not None,
-                actions
-            ))
+            # jumps (order matters)
+            self.first_action(opc, [
+                self.jmp_rel,
+                self.jmp_rel_arg,
+                self.jmp_abs,
+                self.jmp_cond
+            ])  
+            # stack offset
+            self.first_action(opc, [
+                self.sp_ofs,
+                self.sp_ofs_plus_arg,
+                self.sp_ofs_minus_arg
+            ])
 
     def jmp_rel(self, diffs):
         offsets = []
@@ -61,6 +89,9 @@ class Semantics:
             if d.block != d.new_block:
                 return None
             offsets.append(d.new_ip - d.ip)
+
+        if abs(offsets[0]) > Semantics.MAX_JUMP_OFS:
+            return None
 
         for ofs in offsets:
             if ofs != offsets[0]:
@@ -74,52 +105,132 @@ class Semantics:
                 return None
             offsets.append(d.new_ip - d.ip - d.arg)
 
+        if abs(offsets[0]) > Semantics.MAX_JUMP_OFS:
+            return None
+            
         for ofs in offsets:
             if ofs != offsets[0]:
                 return None 
         return JmpRelArg(offsets[0])
 
-    """
-    def compute_jmps(self):
+    def jmp_abs(self, diffs):
+        offsets = []
+        for d in diffs:
+            if d.block != d.new_block:
+                return None 
+            block_start = min(self.ti.blocks[d.block])
+            offsets.append(d.new_ip - d.arg - block_start)
+
+        if abs(offsets[0]) > Semantics.MAX_JUMP_OFS:
+            return None
+            
+        for ofs in offsets:
+            if ofs != offsets[0]:
+                return None 
+        return JmpAbs(offsets[0])
+
+    # suppose diffs[0] is ip <- ip + k
+    def jmp_cond_A(self, diffs):
+        ofs = diffs[0].new_ip - diffs[0].ip
+        abs_offsets = []
+        for d in diffs:
+            if d.block != d.new_block:
+                return None 
+            if d.new_ip - d.ip != ofs:
+                # then d must be ip <- block-start + arg + k2
+                block_start = min(self.ti.blocks[d.block])
+                abs_offsets.append(d.new_ip - block_start - d.arg)
         
-        all_changes = defaultdict(lambda: [])
-        # does the opcode jump accross blocks ?
-        block = defaultdict(lambda: False)
+        if len(abs_offsets) == 0:
+            return None
+        if abs(abs_offsets[0]) > Semantics.MAX_JUMP_OFS:
+            return None
+            
+        for abs_ofs in abs_offsets:
+            if abs_ofs != abs_offsets[0]:
+                return None
+        return JmpCond(
+            ofs_rel = ofs, 
+            ofs_abs = abs_offsets[0]
+        )
 
-        for i in range(len(self.ti.py_ops) - 1):
-            curr = self.ti.py_ops[i]
-            next = self.ti.py_ops[i+1]
-            if curr.block == next.block:
-                ofs = next.regs[self.ti.ip] - curr.regs[self.ti.ip]
-                all_offsets[curr.opc].add(ofs)
-            else:
-                block[curr.opc] = True
+    # suppose diffs[0] is ip <- block-start + arg + k
+    def jmp_cond_B(self, diffs):
+        block_start = min(self.ti.blocks[diffs[0].block])
+        abs_ofs = diffs[0].new_ip - block_start - diffs[0].arg
+        offsets = []
+        for d in diffs:
+            if d.block != d.new_block:
+                return None 
+            block_start = min(self.ti.blocks[d.block])
+            if d.new_ip - block_start - d.arg != abs_ofs:
+                # then d must be ip <- ip + k2
+                offsets.append(d.new_ip - d.ip)
+        
+        if len(offsets) == 0:
+            return None
+        if abs(offsets[0]) > Semantics.MAX_JUMP_OFS:
+            return None
+            
+        for ofs in offsets:
+            if ofs != offsets[0]:
+                return None 
+        return JmpCond(
+            ofs_rel = offsets[0], 
+            ofs_abs = abs_ofs
+        )
 
-        for opc in self.opcodes:
-            if len(all_offsets[opc]) == 1 and not block[opc]:
-                ofs = list(all_offsets[opc])[0]
-                act = RelJmp(ofs)
-                self.actions[opc].append(act)
-            if len(all_offsets[opc]) == 0 and block[opc]:
-                act = BlockJmp()
-                self.actions[opc].append(act)
+    def jmp_cond(self, diffs):
+        jmpA = self.jmp_cond_A(diffs)
+        if jmpA is not None:
+            return jmpA 
+        return self.jmp_cond_B(diffs)
+            
+    def sp_ofs(self, diffs):
+        offsets = []
+        for d in diffs:
+            if d.frame_changed:
+                return None 
+            offsets.append(d.new_sp - d.sp)
 
+        if abs(offsets[0]) > Semantics.MAX_SP_OFS:
+            return None
 
-    def sp_ofs(self):
-        all_offsets = defaultdict(lambda: set())
-        for i in range(len(self.ti.py_ops) - 1):
-            curr = ti.py_ops[i]
-            next = ti.py_ops[i+1]
-            if i not in self.ti.frame_changes:
-                ofs = next.regs[self.ti.sp] - curr.regs[self.ti.sp]
-                all_offsets[curr.opc].add(ofs)
+        for ofs in offsets:
+            if ofs != offsets[0]:
+                return None 
+        return SpOfs(offsets[0])
 
-        for opc in self.opcodes:
-            if len(all_offsets[opc]) == 1:
-                ofs = list(all_offsets[opc])[0]
-                act = SpOfs(ofs)
-                self.actions[opc].append(act)
-    """
+    def sp_ofs_minus_arg(self, diffs):
+        offsets = []
+        for d in diffs:
+            if d.frame_changed:
+                return None
+            offsets.append(d.new_sp - d.sp + 8*d.arg)
+
+        if abs(offsets[0]) > Semantics.MAX_SP_OFS:
+            return None
+            
+        for ofs in offsets:
+            if ofs != offsets[0]:
+                return None 
+        return SpOfsMinusArg(offsets[0])
+    
+    def sp_ofs_plus_arg(self, diffs):
+        offsets = []
+        for d in diffs:
+            if d.frame_changed:
+                return None
+            offsets.append(d.new_sp - d.sp - 8*d.arg)
+
+        if abs(offsets[0]) > Semantics.MAX_SP_OFS:
+            return None
+            
+        for ofs in offsets:
+            if ofs != offsets[0]:
+                return None 
+        return SpOfsPlusArg(offsets[0])
+
 
 if __name__ == "__main__":
     # The trace file has one trace per line.
@@ -154,6 +265,13 @@ if __name__ == "__main__":
     print("[+] Semantic actions for each opcode")
     sem = Semantics(ti)
     sem.compute_diffs()
+
+    """
+    for d in sem.diffs[0x83]: # CALL_FUNCTION
+        print("sp=0x%x\targ=%d\tnext_block_sp=0x%x\tofs=0x%x" %
+            (d.sp, d.arg, d.next_block_sp, d.next_block_sp - d.sp + 8*d.arg))
+    """
+    
     sem.compute_actions()
     for opc, actions in sem.actions.items():
         count = len(set(d.ip for d in sem.diffs[opc]))
