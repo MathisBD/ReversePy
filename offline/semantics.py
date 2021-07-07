@@ -1,24 +1,88 @@
 
+from typing import DefaultDict
 from py_op import *
 from actions import *
 from trace_info import *
+from emulate import *
 from collections import defaultdict
-
+import os
+import json
 
 class Semantics:
+    class StateDiff:
+        def __init__(self, ip, new_ip, sp, new_sp, block, new_block, frame_changed, arg):
+            self.ip = ip 
+            self.new_ip = new_ip 
+            self.sp = sp 
+            self.new_sp = new_sp 
+            self.block = block 
+            self.new_block = new_block 
+            self.frame_changed = frame_changed
+            self.arg = arg 
+
     def __init__(self, ti):
         self.ti = ti
         self.opcodes = set(op.opc for op in ti.py_ops)
-        # maps opcode -> list of actions
+        # maps opcode -> list of state diffs
+        self.diffs = defaultdict(lambda: [])
+        # maps opcode -> list of compatible actions
         self.actions = defaultdict(lambda: [])
 
-    def compute(self):
-        self.jmps()
-        self.sp_ofs()
+    def compute_diffs(self):
+        for i in range(len(self.ti.py_ops) - 1):
+            curr = self.ti.py_ops[i]
+            next = self.ti.py_ops[i+1]
+            diff = Semantics.StateDiff(
+                ip = curr.regs[self.ti.ip],
+                new_ip = next.regs[self.ti.ip],
+                sp = curr.regs[self.ti.sp],
+                new_sp = next.regs[self.ti.sp],
+                block = curr.block,
+                new_block = next.block,
+                frame_changed = (i in self.ti.frame_changes),
+                arg = curr.arg
+            )
+            self.diffs[curr.opc].append(diff)
 
-    def jmps(self):
-        # jump offsets inside a block
-        all_offsets = defaultdict(lambda: set())
+    def compute_actions(self):
+        for opc in self.opcodes:
+            actions = []
+            actions.append(self.jmp_rel(self.diffs[opc]))
+            actions.append(self.jmp_rel_arg(self.diffs[opc]))
+            #actions.append(self.jmp_abs(self.diffs[opc]))
+            self.actions[opc] = list(filter(
+                lambda a: a is not None,
+                actions
+            ))
+
+    def jmp_rel(self, diffs):
+        offsets = []
+        for d in diffs:
+            if d.block != d.new_block:
+                return None
+            offsets.append(d.new_ip - d.ip)
+
+        for ofs in offsets:
+            if ofs != offsets[0]:
+                return None 
+        return JmpRel(offsets[0])
+
+    def jmp_rel_arg(self, diffs):
+        offsets = []
+        for d in diffs:
+            if d.block != d.new_block:
+                return None
+            offsets.append(d.new_ip - d.ip - d.arg)
+
+        for ofs in offsets:
+            if ofs != offsets[0]:
+                return None 
+        return JmpRelArg(offsets[0])
+
+    """
+    def compute_jmps(self):
+        
+        all_changes = defaultdict(lambda: [])
         # does the opcode jump accross blocks ?
         block = defaultdict(lambda: False)
 
@@ -29,7 +93,6 @@ class Semantics:
                 ofs = next.regs[self.ti.ip] - curr.regs[self.ti.ip]
                 all_offsets[curr.opc].add(ofs)
             else:
-                #assert(next.regs[self.ti.ip] == min(self.ti.blocks[next.block]))
                 block[curr.opc] = True
 
         for opc in self.opcodes:
@@ -49,15 +112,14 @@ class Semantics:
             next = ti.py_ops[i+1]
             if i not in self.ti.frame_changes:
                 ofs = next.regs[self.ti.sp] - curr.regs[self.ti.sp]
-                if ofs != 0:
-                    all_offsets[curr.opc].add(ofs)
+                all_offsets[curr.opc].add(ofs)
 
         for opc in self.opcodes:
             if len(all_offsets[opc]) == 1:
                 ofs = list(all_offsets[opc])[0]
                 act = SpOfs(ofs)
                 self.actions[opc].append(act)
-
+    """
 
 if __name__ == "__main__":
     # The trace file has one trace per line.
@@ -74,12 +136,28 @@ if __name__ == "__main__":
     ti.detect_frames()
     ti.detect_instr_blocks()
 
+    """
+    trace = None
+    ti.file.seek(0, os.SEEK_SET)
+    for i, line in enumerate(ti.file):
+        trace = json.loads(line)
+        op = PyOp(trace)
+        if opcodeName(op.opc) == "JUMP_FORWARD":
+        #if opcodeName(op.opc) == "LOAD_NAME":
+            break
+
+    assert(trace is not None)
+    emulate_ip_expr(trace, ti)
+    """
+
     
     print("[+] Semantic actions for each opcode")
     sem = Semantics(ti)
-    sem.compute()
+    sem.compute_diffs()
+    sem.compute_actions()
     for opc, actions in sem.actions.items():
-        print("\t%s:" % opcodeName(opc))
+        count = len(set(d.ip for d in sem.diffs[opc]))
+        print("\t%s (observed at %d locations):" % (opcodeName(opc), count))
         for act in actions:
             print("\t\t%s" % act)
     
@@ -116,8 +194,8 @@ if __name__ == "__main__":
         if (i-1) in ti.frame_changes:
             print("\n\t%d: block=%d" % (i, op.block))
         print("\t0x%x: %s %d" % (op.regs[ti.ip], opcodeName(op.opc), op.arg))
-    """
+    
     for i, op in enumerate(ti.py_ops):
         if i in ti.frame_changes:
             print("%d: 0x%x: %s %d" % (i, op.regs[ti.ip], opcodeName(op.opc), op.arg)) 
-    """
+    

@@ -1,0 +1,62 @@
+[+] Reg info :
+	rax: 	align=0x01	distinct values=    45	max_stack_streak=     1	max_instr_streak=     0	overwrite count=  1059
+	rbx: 	align=0x10	distinct values=     9	max_stack_streak=     0	max_instr_streak=     0	overwrite count=   163
+	rcx: 	align=0x01	distinct values=  1041	max_stack_streak=     0	max_instr_streak=     0	overwrite count=  1015
+	rdx: 	align=0x02	distinct values=   115	max_stack_streak=     1	max_instr_streak=    20	overwrite count=     0
+	rsi: 	align=0x02	distinct values=   115	max_stack_streak=     1	max_instr_streak=    20	overwrite count=     0
+	rdi: 	align=0x01	distinct values=  1574	max_stack_streak=     0	max_instr_streak=     0	overwrite count=  6095
+	rsp: 	align=0x10	distinct values=     9	max_stack_streak=     0	max_instr_streak=     0	overwrite count=   151
+	rbp: 	align=0x20	distinct values=     1	max_stack_streak=     0	max_instr_streak=     0	overwrite count=     0
+	r8: 	align=0x01	distinct values=   318	max_stack_streak=     0	max_instr_streak=     0	overwrite count=  4988
+	r9: 	align=0x01	distinct values=    25	max_stack_streak=     1	max_instr_streak=     0	overwrite count=  5010
+	r10: 	align=0x00	distinct values=     1	max_stack_streak=     0	max_instr_streak=     0	overwrite count=     0
+	r11: 	align=0x01	distinct values=    38	max_stack_streak=     0	max_instr_streak=     0	overwrite count=    41
+	r12: 	align=0x02	distinct values=   179	max_stack_streak=     1	max_instr_streak=    20	overwrite count=     0
+	r13: 	align=0x01	distinct values=  1305	max_stack_streak=     0	max_instr_streak=     1	overwrite count=  5035
+	r14: 	align=0x20	distinct values=     1	max_stack_streak=     0	max_instr_streak=     0	overwrite count=     0
+	r15: 	align=0x08	distinct values=    39	max_stack_streak=    13	max_instr_streak=     0	overwrite count=  9144
+[+] Stack ptr candidates:  {'r15'}
+[+] Instr ptr candidates:  {'rsi', 'rdx', 'r12'}
+	Didn't find the instruction pointer ! Continuing.
+[+] Big reg changes :
+	r15:	 [90, 93, 99, 103, 108, 118, 119, 126, 134, 138, 154, 162]
+	rsi:	 [89, 90]
+		diff count= 12
+	rdx:	 [89, 90]
+		diff count= 12
+	r12:	 [89, 90, 93, 99, 103, 108, 118, 119, 126, 134, 138, 154, 162]
+		diff count= 1
+[+] Instr ptr candidates:  {'r12'}
+[+] Emulating to get ip:
+	 0x56087eca3744: movzx edx, word ptr [r12]
+	 0x56087eca3749: add r12, 2
+	 0x56087eca374d: movzx r13d, dl
+	 0x56087eca3751: movzx edx, dh
+	 0x56087eca3754: cmp r13d, 0xa3
+	 0x56087eca375b: ja 0x56087eca3e38
+	 0x56087eca3761: lea rcx, [rip + 0x22caa8]
+	 0x56087eca3768: mov eax, r13d
+	 0x56087eca376b: movsxd rax, dword ptr [rcx + rax*4]
+	 0x56087eca376f: add rax, rcx
+	 0x56087eca3772: jmp rax
+	 0x56087eca4901: movsxd rdx, edx
+	 0x56087eca4904: mov rax, rdx
+	 0x56087eca4907: and rax, 0xfffffffffffffffe
+	 0x56087eca490b: add r12, rax
+	 0x56087eca490e: jmp 0x56087eca3717
+	 0x56087eca3717: mov r10d, dword ptr [rip + 0x32f86e]
+	 0x56087eca371e: mov rsi, r12
+	 0x56087eca3721: sub rsi, qword ptr [rsp + 8]
+	 0x56087eca3726: mov dword ptr [rbx + 0x68], esi
+	 0x56087eca3729: mov edx, esi
+	 0x56087eca372b: test r10d, r10d
+	 0x56087eca372e: je 0x56087eca3744
+[+] Slicing ip:
+	 ref_0 = ip
+	 ref_1 = arg # Byte reference
+	 ref_6 = ((ref_0 + 0x2) & 0xffffffffffffffff) # 0x56087eca3749: add r12, 2
+	 ref_16 = ref_1 # 0x56087eca3751: movzx edx, dh
+	 ref_43 = sx(0x20, ref_16) # 0x56087eca4901: movsxd rdx, edx
+	 ref_45 = ref_43 # 0x56087eca4904: mov rax, rdx
+	 ref_47 = (ref_45 & 0xfffffffffffffffe) # 0x56087eca4907: and rax, 0xfffffffffffffffe
+	 ref_92 = ((ref_6 + ref_47) & 0xffffffffffffffff) # new ip
