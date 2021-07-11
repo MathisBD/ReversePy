@@ -1,0 +1,84 @@
+\documentclass[french]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[a4paper]{geometry}
+\usepackage{babel}
+
+\title{Title bla blah}
+
+\author{Mathis Bouverot-Dupuis}
+\date{June \& July 2021}
+
+\begin{document}
+
+\maketitle 
+
+\begin{abstract}
+	
+\end{abstract}
+
+
+\iffalse
+
+1. Recognizing the VM execution
+	-> cfg : (with some pictures)
+		-> how I chose to build the cfg
+		-> first try : we can see the computed gotos
+		-> second try : centralized fetch
+	-> extracting traces for each opcode (pin tool)
+		-> what is a trace precisely (where do we break it) ?
+		-> maybe an example for a really short trace (e.g. I think jump_absolute is ~20 lines) : highlight fetch/dispatch/opcode
+		
+2. Abstract VM model
+	-> stack VM (no registers)
+	-> stack : contiguous 8byte cells, pointer to the top of stack
+	-> code block : contiguous 2byte cells, opc + arg, instr pointer
+	-> frame : contains a code block + stack, frame pointer
+	
+3. extracting the VM state/recognizing the VM model (pointers, instr blocks, frame changes)
+	-> list the heuristics for each pointer (we look at register values between opcodes, i.e. just before the fetch instruction)
+		ip :
+			alignment >= 0x2
+			more than a few distinct values
+			never overwritten (explain)
+			max instr streak (explain, give offsets) >= a little number
+		sp :
+			alignment >= 0x8
+			more than a few distinct values
+			is overwritten at least a few times
+			max stack streak (explain, give offsets) >= a little number
+				-> explain why we exclude 0 from the offsets (to distinguish sp and fp)
+	-> enough for sp, not for ip : 
+		heuristic : 
+			-> sp gives us the frame changes (look for big sp changes) 
+			-> code block changes at most frame changes (except recursive function calls) 
+			-> we expect big ip jumps at frame changes
+	-> fp : we expect it to change at frame changes
+		-> we find 2 that change *exactly* at the same time as sp : one is esp
+	-> method for finding code blocks
+		-> put instrs in the same block if :
+			either close in memory
+			or executed one after the other without a frame change
+			
+4. 'shallow' semantics of opcodes
+	-> what kind of semantics do we want ? 
+		-> only look at VM state between opcodes : don't look at the asm trace (implementation) of each opcode
+		-> variations of sp :
+			sp <- sp + cste 
+			sp <- sp - 8*arg + cste (arg tells how many values to 'eat' on the stack)
+		-> variations of ip :
+			ip <- ip + cste (go to next instr)
+			ip <- ip + arg + cste (relative jump)
+			ip <- code-block-start + arg + cste (absolute jump)
+			ip <- either absolute jump or next instr (conditional jump)
+		-> we require cste to be small (a few stack/code cells at most)
+		
+5. experimental setup 
+	-> link to github
+	-> version of pin & python, a word on the centralized fetch compile option, say how it breaks with different python versions (e.g. libpython on Alexandre's machine)
+	-> brief description of the code organization -> maybe add a readme in the github repo instead ?
+	
+\fi 
+
+\end{document}
