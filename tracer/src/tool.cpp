@@ -4,6 +4,7 @@
 #include <sys/syscall.h>
 #include <fstream>
 #include <sstream>
+#include <set>
 
 #include "mem.h"
 #include "errors.h"
@@ -18,6 +19,9 @@ static FILE* cfgDotFile;
 static FILE* imgFile;
 static FILE* bytecodeFile;
 static std::fstream traceDumpStream;
+
+// the ids of the regions used by the python interpreter
+std::set<uint32_t> pythonImgIds;
 
 static std::map<uint64_t, Instruction*> instrList;
 static std::map<Jump, uint32_t> jumps;
@@ -34,6 +38,11 @@ static std::vector<TraceElement> completeTrace;
 // Each entry is a pair of indices, [start, end] in the complete trace.
 static std::vector<std::pair<uint64_t, uint64_t>> opcodeTraces[256];
 
+
+bool isInPythonRegion(uint64_t addr)
+{
+    return pythonImgIds.find(getImgId(addr)) != pythonImgIds.end();
+}
 
 // called by PIN, BEFORE the read
 void recordMemRead(ADDRINT memAddr, UINT32 memSize)
@@ -125,9 +134,17 @@ void recordJump(ADDRINT addr)
 void syscallEntry(ADDRINT scNum, ADDRINT arg0, ADDRINT arg1, ADDRINT arg2,
     ADDRINT arg3, ADDRINT arg4, ADDRINT arg5)
 {
-    if (!progRunning && scNum == SYS_openat && std::string((char*)arg1) == progName) {
+    /*if (!progRunning && scNum == SYS_openat && std::string((char*)arg1) == progName) {
         progRunning = true;
         printf("[+] Opened file %s\n", progName.c_str());
+    }*/
+    if (scNum == SYS_openat && std::string((char*)arg1) == "tototo") {
+        progRunning = true;
+        printf("[+] Opened tototo\n");
+    }
+    if (scNum == SYS_openat && std::string((char*)arg1) == "tototo_after") {
+        progRunning = false;
+        printf("[+] Opened tototo_after\n");
     }
 }
 
@@ -173,7 +190,7 @@ void insCallback(INS ins, void* v)
         IARG_SYSARG_VALUE, 4,
         IARG_SYSARG_VALUE, 5,
         IARG_END);
-    if (getImgId(instr->addr) == mainImgId) {
+    if (isInPythonRegion(instr->addr)) {
         // dump execution trace
         INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)dumpTraceElement,
             IARG_CALL_ORDER, CALL_ORDER_LAST,
@@ -228,10 +245,13 @@ void removeDeadInstrs()
 // and is executed a lot
 bool isFetch(const TraceElement& te)
 {
+    if (!isInPythonRegion(te.instr->addr)) {
+        return false;
+    }
     if (te.instr->xedOpcode != XED_ICLASS_MOVZX) {
         return false;
     }
-    if (te.instr->execCount < 5000) {
+    if (te.instr->execCount < 500) {
         return false;
     }
     for (const MemoryAccess& read : te.reads) {
@@ -259,6 +279,7 @@ void saveTrace(const std::vector<TraceElement>& trace)
 
 void dumpTraces()
 {
+    printf("[+] Dumping trace\n");
     std::vector<TraceElement> currTrace;
     bool foundFetch = false;
     printf("\ttotal size: %lu\n", completeTrace.size());
@@ -288,7 +309,7 @@ void dumpInstrList()
     fprintf(codeDumpFile, "{\n");
     for (auto it = instrList.begin(); it != instrList.end(); it++) {
         Instruction* instr = it->second;
-        if (getImgId(instr->addr) == mainImgId) {
+        if (isInPythonRegion(instr->addr)) {
             std::stringstream opcodeStr;
             opcodeStr << std::hex << "[ ";
             for (size_t i = 0; i < instr->opcodesCount; i++) {
@@ -307,14 +328,27 @@ void dumpInstrList()
     fprintf(codeDumpFile, "}\n");
 }
 
+void checkFetches()
+{
+    std::set<uint64_t> fetchAddrs;
+    for (const TraceElement& te : completeTrace) {
+        if (isFetch(te)) {
+            fetchAddrs.insert(te.instr->addr);
+        }
+    }
+    printf("[+] Possible fetch addresses :\n");
+    for (auto addr : fetchAddrs) {
+        printf("\t0x%lx\n", addr);
+    }
+}
 
 // called by PIN at the end of the program.
 // we can't write to stdout here since stdout might
 // have been closed (for PROG=ls at least).
 void finiCallback(int code, void* v)
 {
-    printf("[+] Writting output\n");
     removeDeadInstrs();
+    checkFetches();
     dumpTraces();
     dumpInstrList();
     printf("[+] Done\n");
@@ -338,8 +372,10 @@ void imgLoadCallback(IMG img, void* v)
         addImgRegion(reg);
         fprintf(imgFile, "\tregion 0x%lx -> 0x%lx\n", reg->startAddr, reg->endAddr);
     }
-    if (IMG_IsMainExecutable(img)) {
-        mainImgId = IMG_Id(img);
+    const char* pythonPrefix = "/home/mathis/src/StageL3/pypy3.7-v7.3.5-linux64/";
+    if (IMG_IsMainExecutable(img) ||
+        IMG_Name(img).compare(0, strlen(pythonPrefix), pythonPrefix) == 0) {
+        pythonImgIds.insert(IMG_Id(img));
     }
 }
 
@@ -360,14 +396,14 @@ int main(int argc, char* argv[])
 
     // get the name of the python program we are running
     progName = std::string(argv[argc-1]);
-    if (progName.size() > 3 && progName.substr(progName.size() - 3, 3) == ".py") {
+    //if (progName.size() > 3 && progName.substr(progName.size() - 3, 3) == ".py") {
         printf("[+] Detected you are running the python program %s\n", progName.c_str());
         // wait for the interpreter to open the program before tracing it
         progRunning = false;
-    }
+    /*}
     else {
         progRunning = true;
-    }
+    }*/
 
     // open the log files
     std::string outputFolder = outputFolderKnob.Value();

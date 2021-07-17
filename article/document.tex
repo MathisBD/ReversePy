@@ -30,14 +30,14 @@
 		-> what is a trace precisely (where do we break it) ?
 		-> maybe an example for a really short trace (e.g. I think jump_absolute is ~20 lines) : highlight fetch/dispatch/opcode
 		
-2. Abstract VM model
+2. Abstract VM model -> at the start of the article : describe informally a VM
 	-> stack VM (no registers)
 	-> stack : contiguous 8byte cells, pointer to the top of stack
 	-> code block : contiguous 2byte cells, opc + arg, instr pointer
 	-> frame : contains a code block + stack, frame pointer
 	
-3. extracting the VM state/recognizing the VM model (pointers, instr blocks, frame changes)
-	-> list the heuristics for each pointer (we look at register values between opcodes, i.e. just before the fetch instruction)
+3. extracting the VM state/recognizing the VM model (pointers, instr blocks, frame changes) -> merge with 2., and 
+	-> list the characteristics of each pointer (we look at register values between opcodes, i.e. just before the fetch instruction)
 		ip :
 			alignment >= 0x2
 			more than a few distinct values

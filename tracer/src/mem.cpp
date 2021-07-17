@@ -2,9 +2,6 @@
 #include <map>
 #include "errors.h"
 
-// initialize this to some illegal value (not 0, not a small integer).
-// not static (other files will want to access this)
-uint32_t mainImgId = 999999;
 // maps start address -> region
 static std::map<uint64_t, ImgRegion*> imgRegions;
 
@@ -25,3 +22,4 @@ uint32_t getImgId(uint64_t addr)
     }
     return 0;
 }
+
