@@ -156,7 +156,7 @@ void CFG::writeDotGraph(FILE* file, uint32_t maxBBSize)
     // labels must be read into a stack allocated buffer without checking for size lol)
 
     fprintf(file, "digraph {\n");
-    fprintf(file, "\tsplines=ortho\n");
+    //fprintf(file, "\tsplines=ortho\n");
     fprintf(file, "\tnode[ shape=box ]\n");
 
     for (auto bb : bbVect) {
@@ -169,7 +169,7 @@ void CFG::writeDotGraph(FILE* file, uint32_t maxBBSize)
                 if (i != prevPrinted + 1 && i > 0) {
                     fprintf(file, ".....\\l");
                 }
-                fprintf(file, "%s\\l", bb->instrs[i]->disassembly.c_str());
+                fprintf(file, "%u\t%s\\l", bb->instrs[i]->execCount, bb->instrs[i]->disassembly.c_str());
                 prevPrinted = i;
             }
         }

@@ -21,11 +21,12 @@ static FILE* bytecodeFile;
 static std::fstream traceDumpStream;
 
 // the ids of the regions used by the python interpreter
-std::set<uint32_t> pythonImgIds;
+static std::set<uint32_t> pythonImgIds;
 
 static std::map<uint64_t, Instruction*> instrList;
 static std::map<Jump, uint32_t> jumps;
 static uint64_t prevAddr = 0;
+static std::vector<uint64_t> callAddrStack;
 
 // is the interpreted program (e.g. prog.py) running ? 
 static bool progRunning;
@@ -121,14 +122,45 @@ void dumpTraceElement(Instruction* instr, const CONTEXT* ctx)
     }
 }
 
-// called each time we execute a selected instruction
-// (before we actually execute it).
+// called each time we execute a non-call and non-ret instruction
+// even in a library (before we actually execute it).
 void recordJump(ADDRINT addr)
 {
     if (progRunning) {
         jumps[Jump(prevAddr, addr)]++;
-        prevAddr = addr;
     }
+    prevAddr = addr;
+}
+
+// called each time we execute a call instruction
+// even in a library (before we actually execute it).
+void recordCall(ADDRINT addr)
+{
+    if (progRunning) {
+        jumps[Jump(prevAddr, addr)]++;
+    }
+    callAddrStack.push_back(addr);
+    // I set prevAddr to 0 to cut the link between the caller and the callee
+    // so that the VM loop is more visible on the CFG.
+    // If you are not interested in seeing the VM loop, consider
+    // setting prevAddr to addr.
+    //prevAddr = addr;
+    prevAddr = 0;
+}
+
+// called each time we execute a ret instruction
+// even in a library (before we actually execute it).
+void recordRet(ADDRINT addr)
+{
+    if (progRunning) {
+        jumps[Jump(prevAddr, addr)]++;
+    }
+    if (callAddrStack.empty()) {
+        panic("empty call stack");
+    }
+    uint64_t callAddr = callAddrStack.back();
+    callAddrStack.pop_back();
+    prevAddr = callAddr;
 }
 
 void syscallEntry(ADDRINT scNum, ADDRINT arg0, ADDRINT arg1, ADDRINT arg2,
@@ -190,6 +222,22 @@ void insCallback(INS ins, void* v)
         IARG_SYSARG_VALUE, 4,
         IARG_SYSARG_VALUE, 5,
         IARG_END);
+    // record jumps
+    if (INS_IsProcedureCall(ins)) {
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)recordCall,
+            IARG_UINT64, instr->addr,
+            IARG_END);
+    }
+    else if (INS_IsRet(ins)) {
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)recordRet,
+            IARG_UINT64, instr->addr,
+            IARG_END); 
+    }
+    else {
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)recordJump,
+            IARG_UINT64, instr->addr,
+            IARG_END); 
+    }
     if (isInPythonRegion(instr->addr)) {
         // dump execution trace
         INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)dumpTraceElement,
@@ -221,10 +269,6 @@ void insCallback(INS ins, void* v)
                     IARG_END);
             }
         }
-        // record jumps
-        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)recordJump,
-            IARG_UINT64, instr->addr,
-            IARG_END); 
     }
 }
 
@@ -342,15 +386,47 @@ void checkFetches()
     }
 }
 
+void dumpCFG()
+{
+    // get the CFG of the python code
+    std::vector<Instruction*> cfgInstrs;
+    for (auto it = instrList.begin(); it != instrList.end(); it++) {
+        Instruction* instr = it->second;
+        if (isInPythonRegion(instr->addr)) {
+            cfgInstrs.push_back(instr);
+        }
+    }
+    CFG* cfg = new CFG(cfgInstrs, jumps);
+    cfg->checkIntegrity(false);
+    cfg->mergeBlocks();
+    cfg->checkIntegrity(false);
+    cfg->filterBBs(900, 400);
+    // exec counts now don't mean anything
+    cfg->checkIntegrity(false);
+    cfg->mergeBlocks();
+    cfg->checkIntegrity(false);
+    cfg->writeDotGraph(cfgDotFile, 10);
+
+    fprintf(codeDumpFile, "Basic block count : %lu\n", cfg->getBasicBlocks().size());
+}
+
 // called by PIN at the end of the program.
 // we can't write to stdout here since stdout might
 // have been closed (for PROG=ls at least).
 void finiCallback(int code, void* v)
 {
     removeDeadInstrs();
-    checkFetches();
-    dumpTraces();
+    //checkFetches();
+    //dumpTraces();
+
+    for (auto te : completeTrace) {
+        traceDumpStream 
+            << te.instr->addr << "\t"
+            << te.instr->disassembly << "\n";
+    }
+
     dumpInstrList();
+    dumpCFG();
     printf("[+] Done\n");
 
     // close the log files
@@ -396,14 +472,15 @@ int main(int argc, char* argv[])
 
     // get the name of the python program we are running
     progName = std::string(argv[argc-1]);
-    //if (progName.size() > 3 && progName.substr(progName.size() - 3, 3) == ".py") {
+    if (progName.size() > 3 && progName.substr(progName.size() - 3, 3) == ".py") {
         printf("[+] Detected you are running the python program %s\n", progName.c_str());
         // wait for the interpreter to open the program before tracing it
         progRunning = false;
-    /*}
+    }
     else {
         progRunning = true;
-    }*/
+    }
+    
 
     // open the log files
     std::string outputFolder = outputFolderKnob.Value();
