@@ -166,18 +166,18 @@ void recordRet(ADDRINT addr)
 void syscallEntry(ADDRINT scNum, ADDRINT arg0, ADDRINT arg1, ADDRINT arg2,
     ADDRINT arg3, ADDRINT arg4, ADDRINT arg5)
 {
-    /*if (!progRunning && scNum == SYS_openat && std::string((char*)arg1) == progName) {
+    if (!progRunning && scNum == SYS_openat && std::string((char*)arg1) == progName) {
         progRunning = true;
         printf("[+] Opened file %s\n", progName.c_str());
-    }*/
-    if (scNum == SYS_openat && std::string((char*)arg1) == "tototo") {
+    }
+    /*if (scNum == SYS_openat && std::string((char*)arg1) == "tototo") {
         progRunning = true;
         printf("[+] Opened tototo\n");
     }
     if (scNum == SYS_openat && std::string((char*)arg1) == "tototo_after") {
         progRunning = false;
         printf("[+] Opened tototo_after\n");
-    }
+    }*/
 }
 
 // called by PIN each time we encounter an instruction for 
@@ -285,25 +285,76 @@ void removeDeadInstrs()
     }
 }
 
-// the fetch is a movzx that reads 2 bytes in memory
-// and is executed a lot
-bool isFetch(const TraceElement& te)
+std::map<uint64_t, uint32_t> getOutEdges(CFG* cfg)
 {
-    if (!isInPythonRegion(te.instr->addr)) {
-        return false;
+    std::map<uint64_t, uint32_t> outEdges;
+    for (const BasicBlock* bb : cfg->getBasicBlocks()) {
+        for (size_t i = 0; i < bb->instrs.size() - 1; i++) {
+            outEdges[bb->instrs[i]->addr] = 1;
+        }
+        outEdges[bb->instrs.back()->addr] = bb->nextBBs.size();
     }
-    if (te.instr->xedOpcode != XED_ICLASS_MOVZX) {
-        return false;
-    }
-    if (te.instr->execCount < 500) {
-        return false;
-    }
-    for (const MemoryAccess& read : te.reads) {
-        if (read.size == 2) {
-            return true;
+    return outEdges;
+}
+
+std::set<uint64_t> getSmallReadInstrs(CFG* cfg, uint32_t maxReadSize)
+{
+    std::set<uint64_t> smallReadInstrs;
+    for (const auto& te : completeTrace) {
+        for (const auto& read : te.reads) {
+            if (read.size <= maxReadSize) {
+                smallReadInstrs.insert(te.instr->addr);
+                break;
+            }
         }
     }
-    return false;
+    return smallReadInstrs;
+}
+
+uint64_t findDispatch(CFG* cfg)
+{
+    uint32_t dispatchMinExecCount = 1000;
+    uint32_t dispatchMinOutEdges = 5;
+    uint32_t dispatchMaxReadSize = 2;
+    // get basic metrics
+    auto outEdges = getOutEdges(cfg);
+    auto smallReadInstrs = getSmallReadInstrs(cfg, dispatchMaxReadSize);
+    // trim down the cfg
+    cfg->filterBBs(dispatchMinExecCount, dispatchMinExecCount / 2);
+    cfg->checkIntegrity();
+    cfg->mergeBlocks();
+    cfg->checkIntegrity();
+    // dump the cfg for viewing purposes 
+    cfg->writeDotGraph(cfgDotFile, 20);
+    // find the dispatch
+    std::set<uint64_t> potentialDispatch;
+    for (const BasicBlock* bb : cfg->getBasicBlocks()) {
+        // does the block read a small memory region ?
+        bool read = false;
+        for (Instruction* instr : bb->instrs) {
+            if (smallReadInstrs.find(instr->addr) != smallReadInstrs.end()) {
+                read = true;
+                break;
+            }
+        }
+        if (!read) {
+            continue;
+        }
+        for (const Instruction* instr : bb->instrs) {
+            if (outEdges[instr->addr] >= dispatchMinOutEdges &&
+                instr->execCount >= dispatchMinExecCount) 
+            {
+                // we found the dispatch !
+                potentialDispatch.insert(instr->addr);                
+            }
+        }
+    }
+    if (potentialDispatch.size() != 1) {
+        panic("didn't find the dispatch");
+    }
+    uint64_t dispatch = *(potentialDispatch.begin());
+    printf("[+] Found dispatch at 0x%lx\n", dispatch);
+    return dispatch;
 }
 
 void saveTrace(const std::vector<TraceElement>& trace)
@@ -321,25 +372,25 @@ void saveTrace(const std::vector<TraceElement>& trace)
     traceDumpStream << "]\n";
 }
 
-void dumpTraces()
+void dumpTraces(uint64_t dispatchAddr)
 {
-    printf("[+] Dumping trace\n");
+    printf("[+] Trace info\n");
     std::vector<TraceElement> currTrace;
-    bool foundFetch = false;
+    bool foundDispatch = false;
     printf("\ttotal size: %lu\n", completeTrace.size());
     for (const TraceElement& te : completeTrace) {
-        if (isFetch(te)) {
-            if (foundFetch) {
+        if (te.instr->addr == dispatchAddr) {
+            if (foundDispatch) {
                 // save the current trace
                 saveTrace(currTrace);
             } 
             else {
                 // don't save the header
+                foundDispatch = true;
                 printf("\theader size: %lu\n", currTrace.size());
             }
             // start a new trace
             currTrace.clear();
-            foundFetch = true;
         }
         currTrace.push_back(te);
     }
@@ -372,23 +423,9 @@ void dumpInstrList()
     fprintf(codeDumpFile, "}\n");
 }
 
-void checkFetches()
-{
-    std::set<uint64_t> fetchAddrs;
-    for (const TraceElement& te : completeTrace) {
-        if (isFetch(te)) {
-            fetchAddrs.insert(te.instr->addr);
-        }
-    }
-    printf("[+] Possible fetch addresses :\n");
-    for (auto addr : fetchAddrs) {
-        printf("\t0x%lx\n", addr);
-    }
-}
 
-void dumpCFG()
+CFG* buildCFG()
 {
-    // get the CFG of the python code
     std::vector<Instruction*> cfgInstrs;
     for (auto it = instrList.begin(); it != instrList.end(); it++) {
         Instruction* instr = it->second;
@@ -397,17 +434,10 @@ void dumpCFG()
         }
     }
     CFG* cfg = new CFG(cfgInstrs, jumps);
-    cfg->checkIntegrity(false);
+    cfg->checkIntegrity();
     cfg->mergeBlocks();
-    cfg->checkIntegrity(false);
-    cfg->filterBBs(900, 400);
-    // exec counts now don't mean anything
-    cfg->checkIntegrity(false);
-    cfg->mergeBlocks();
-    cfg->checkIntegrity(false);
-    cfg->writeDotGraph(cfgDotFile, 10);
-
-    fprintf(codeDumpFile, "Basic block count : %lu\n", cfg->getBasicBlocks().size());
+    cfg->checkIntegrity();
+    return cfg;
 }
 
 // called by PIN at the end of the program.
@@ -415,18 +445,15 @@ void dumpCFG()
 // have been closed (for PROG=ls at least).
 void finiCallback(int code, void* v)
 {
+    printf("[+] Finished tracing\n");
+
     removeDeadInstrs();
-    //checkFetches();
-    //dumpTraces();
-
-    for (auto te : completeTrace) {
-        traceDumpStream 
-            << te.instr->addr << "\t"
-            << te.instr->disassembly << "\n";
-    }
-
     dumpInstrList();
-    dumpCFG();
+
+    CFG* cfg = buildCFG(); 
+    uint64_t dispatchAddr = findDispatch(cfg);
+    dumpTraces(dispatchAddr);
+
     printf("[+] Done\n");
 
     // close the log files
@@ -448,9 +475,11 @@ void imgLoadCallback(IMG img, void* v)
         addImgRegion(reg);
         fprintf(imgFile, "\tregion 0x%lx -> 0x%lx\n", reg->startAddr, reg->endAddr);
     }
-    const char* pythonPrefix = "/home/mathis/src/StageL3/pypy3.7-v7.3.5-linux64/";
+    const char* pypyPrefix = "/home/mathis/src/StageL3/pypy3.7-v7.3.5-linux64/";
+    //const char* cpythonPrefix = "/home/mathis/src/StageL3/cpython3.8.10";
     if (IMG_IsMainExecutable(img) ||
-        IMG_Name(img).compare(0, strlen(pythonPrefix), pythonPrefix) == 0) {
+        IMG_Name(img).compare(0, strlen(pypyPrefix), pypyPrefix) == 0 /*||
+        IMG_Name(img).compare(0, strlen(cpythonPrefix), cpythonPrefix) == 0*/) {
         pythonImgIds.insert(IMG_Id(img));
     }
 }

@@ -63,7 +63,7 @@ public:
         const std::map<Jump, uint32_t>& jumps);
     void mergeBlocks();
     void writeDotGraph(FILE* file, uint32_t maxBBsize);
-    void checkIntegrity(bool checkExecCounts);
+    void checkIntegrity();
     std::vector<BasicBlock*> getBasicBlocks();
     void filterBBs(uint32_t bbFreqThreshold, uint32_t edgeFreqThreshold);
 private: 

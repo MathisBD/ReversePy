@@ -8,6 +8,7 @@ class Toto:
     def get_stuff(self):
         return self.x
 
+f = open("tototo", "w")
 for i in range(100):
     t = Toto()
     if i % 2 == 1:
@@ -20,3 +21,4 @@ for i in range(100):
         if not t:
             t.do_stuff(5)
 print("hi")
+f = open("tototo_after", "w")

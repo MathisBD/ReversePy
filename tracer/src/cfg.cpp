@@ -78,44 +78,12 @@ bool vectContains(const std::vector<T>& vect, const T& x)
     return std::find(vect.begin(), vect.end(), x) != vect.end();
 }
 
-void CFG::checkIntegrity(bool checkExecCounts)
+void CFG::checkIntegrity()
 {
     for (auto bb : bbVect) {
         // check block is non-empty
         if (bb->instrs.size() == 0) {
             panic("[CFG] empty basic block\n");
-        }
-        if (checkExecCounts) {
-            // check all instructions have same exec count
-            uint32_t execCount = bb->instrs[0]->execCount;
-            for (auto instr : bb->instrs) {
-                if (instr->execCount != execCount) {
-                    panic("[CFG] basic block starting at 0x%lx has instructions with different exec counts\n",
-                        bb->firstAddr());
-                }
-            }
-            if (bb->nextBBs.size() > 0) {
-                // check the exec counts of forward edges sum up to the right total
-                uint32_t forwardExecCount = 0;
-                for (auto edge : bb->nextBBs) {
-                    forwardExecCount += edge.execCount;
-                }
-                if (forwardExecCount != execCount) {
-                    panic("[CFG] incorrect forward exec count for basic block starting at 0x%lx\n",
-                        bb->firstAddr());
-                }
-            }
-            // check the exec counts of backward edges sum up to the right total
-            if (bb->prevBBs.size() > 0) {
-                uint32_t backwardExecCount = 0;
-                for (auto edge : bb->prevBBs) {
-                    backwardExecCount += edge.execCount;
-                }
-                if (backwardExecCount != execCount) {
-                    panic("[CFG] incorrect backward exec count for basic block starting at 0x%lx\n",
-                        bb->firstAddr());
-                }
-            }
         }
         // check forward links
         for (auto edge : bb->nextBBs) {
@@ -156,7 +124,6 @@ void CFG::writeDotGraph(FILE* file, uint32_t maxBBSize)
     // labels must be read into a stack allocated buffer without checking for size lol)
 
     fprintf(file, "digraph {\n");
-    //fprintf(file, "\tsplines=ortho\n");
     fprintf(file, "\tnode[ shape=box ]\n");
 
     for (auto bb : bbVect) {
@@ -169,7 +136,7 @@ void CFG::writeDotGraph(FILE* file, uint32_t maxBBSize)
                 if (i != prevPrinted + 1 && i > 0) {
                     fprintf(file, ".....\\l");
                 }
-                fprintf(file, "%u\t%s\\l", bb->instrs[i]->execCount, bb->instrs[i]->disassembly.c_str());
+                fprintf(file, "0x%lx\t%s\\l", bb->instrs[i]->addr, bb->instrs[i]->disassembly.c_str());
                 prevPrinted = i;
             }
         }
