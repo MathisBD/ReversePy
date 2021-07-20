@@ -79,26 +79,23 @@ void dumpTraceElement(Instruction* instr, const CONTEXT* ctx)
     if (progRunning) {
         (instr->execCount)++;
         saveOpcodes(instr->addr, instr->size);
-        //if (instr->xedOpcode == XED_ICLASS_MOVZX) {
-            saveReg(REG_RAX, ctx);
-            saveReg(REG_RBX, ctx);
-            saveReg(REG_RCX, ctx);
-            saveReg(REG_RDX, ctx);
-            saveReg(REG_RSI, ctx);
-            saveReg(REG_RDI, ctx);
-            saveReg(REG_RSP, ctx);
-            saveReg(REG_RBP, ctx);
-            saveReg(REG_R8, ctx);
-            saveReg(REG_R9, ctx);
-            saveReg(REG_R10, ctx);
-            saveReg(REG_R11, ctx);
-            saveReg(REG_R12, ctx);
-            saveReg(REG_R13, ctx);
-            saveReg(REG_R14, ctx);
-            saveReg(REG_R15, ctx);
-        //}
         saveReg(REG_RIP, ctx);
-        saveReg(REG_EFLAGS, ctx);
+        saveReg(REG_RAX, ctx);
+        saveReg(REG_RBX, ctx);
+        saveReg(REG_RCX, ctx);
+        saveReg(REG_RDX, ctx);
+        saveReg(REG_RSI, ctx);
+        saveReg(REG_RDI, ctx);
+        saveReg(REG_RSP, ctx);
+        saveReg(REG_RBP, ctx);
+        saveReg(REG_R8, ctx);
+        saveReg(REG_R9, ctx);
+        saveReg(REG_R10, ctx);
+        saveReg(REG_R11, ctx);
+        saveReg(REG_R12, ctx);
+        saveReg(REG_R13, ctx);
+        saveReg(REG_R14, ctx);
+        saveReg(REG_R15, ctx);
         traceEle.instr = instr;
         trace.addElement(traceEle);
 
@@ -266,11 +263,22 @@ void finiCallback(int code, void* v)
     trace.removeDeadInstrs();
     trace.buildCFG();
     
+    // find the fetch/dispatch (this modifies the cfg)
+    findFetchDispatch(trace);
+    printf("[+] Found dispatch at:\n\t0x%lx\n", trace.dispatch);
+    printf("[+] Found fetch(es) at:\n");
+    for (uint64_t fetch : trace.fetches) {
+        printf("\t0x%lx\n", fetch);
+    }
+    if (trace.isFetch(trace.dispatch)) {
+        panic("the dispatch is also a fetch");
+    }
+    
     dumpInstrList(trace, codeDumpFile);
-    uint64_t dispatchAddr = findDispatch(trace);
-    dumpTraces(trace, dispatchAddr, traceDumpStream);
-    // write the CFG after it is modified by findDispatch()
-    trace.cfg->writeDotGraph(cfgDotFile, 6);
+    dumpFetchDispatch(trace, traceDumpStream);
+    dumpTraces(trace, traceDumpStream);
+    // write the CFG after it is modified by findFetchDispatch()
+    trace.cfg->writeDotGraph(cfgDotFile, 100);
 
     printf("[+] Done\n");
 

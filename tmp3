@@ -1,0 +1,24 @@
+bla
+bla 
+bla
+
+fetch
+bla
+fetch 
+bla 
+fetch 
+bla
+bla
+bla
+dispatch
+
+bla
+bla
+bla
+
+
+{ fetches = [a, b, c], dispatch = d }
+trace1
+trace2
+trace3
+...

@@ -21,16 +21,34 @@ void MemoryAccess::toJson(std::fstream& stream) const
         << "\"value\": \""    << value              << "\" }";
 }
 
-inline void TraceElement::regsToJson(std::fstream& stream) const
+
+
+inline void TraceElement::regsToJson(std::fstream& stream, bool allRegs) const
 {
     stream << "{ ";
-    for (size_t i = 0; i < regs.size(); i++) {
-        std::string name = REG_StringShort((REG)(regs[i].first));
-        uint64_t val = regs[i].second;
-        if (i > 0) {
-            stream << ", ";
+    // only include RIP
+    if (!allRegs) {
+        for (size_t i = 0; i < regs.size(); i++) {
+            REG reg = regs[i].first;
+            if (reg == REG_RIP) {
+                std::string name = REG_StringShort(reg);
+                uint64_t val = regs[i].second;
+                stream << "\"" << name << "\": \"" << val << "\"";
+                break;
+            }
         }
-        stream << "\"" << name << "\": \"" << val << "\"";
+    }
+    // include everyone
+    else {
+        for (size_t i = 0; i < regs.size(); i++) {
+            REG reg = regs[i].first;
+            std::string name = REG_StringShort(reg);
+            uint64_t val = regs[i].second;
+            if (i > 0) {
+                stream << ", ";
+            }
+            stream << "\"" << name << "\": \"" << val << "\"";
+        }
     }
     stream << " }";
 }
@@ -73,13 +91,13 @@ inline void TraceElement::opcodesToJson(std::fstream& stream) const
     stream << " ]";
 }
 
-void TraceElement::toJson(std::fstream& stream) const 
+void TraceElement::toJson(std::fstream& stream, bool allRegs) const 
 {
     stream << "{ \"opcodes\": "; 
     opcodesToJson(stream); 
     if (regs.size() > 0) {
         stream << ", \"regs\": ";
-        regsToJson(stream);
+        regsToJson(stream, allRegs);
     }   
     if (reads.size() > 0) {
         stream << ", \"reads\": ";
@@ -102,7 +120,7 @@ void Trace::recordJump(uint64_t from, uint64_t to)
     jumps[Jump(from, to)]++;
 }
 
-Instruction* Trace::findInstr(uint64_t addr)
+Instruction* Trace::findInstr(uint64_t addr) const
 {
     auto it = instrList.find(addr);
     if (it == instrList.end()) {
@@ -114,6 +132,16 @@ Instruction* Trace::findInstr(uint64_t addr)
 void Trace::addInstr(Instruction* instr)
 {
     instrList[instr->addr] = instr;
+}
+
+bool Trace::isFetch(uint64_t addr) const
+{
+    for (uint64_t fetch : fetches) {
+        if (addr == fetch) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void Trace::removeDeadInstrs()

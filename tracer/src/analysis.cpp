@@ -28,48 +28,49 @@ std::set<uint64_t> getSmallReadInstrs(const Trace& trace, uint32_t maxReadSize)
     return smallReadInstrs;
 }
 
-uint64_t findFetchDispatch(Trace& trace)
+void findFetchDispatch(Trace& trace)
 {
-    uint32_t dispatchMinExecCount = 1000;
+    uint32_t dispatchMinExecCount = 500;
     uint32_t dispatchMinOutEdges = 5;
     uint32_t dispatchMaxReadSize = 2;
     // get basic metrics
     auto outEdges = getOutEdges(trace);
     auto smallReadInstrs = getSmallReadInstrs(trace, dispatchMaxReadSize);
-    // trim down the cfg
+    // trim down the cfg : I expect all the fetches and the dispatch to be 
+    // in the same block after this.
     trace.cfg->filterBBs(dispatchMinExecCount, dispatchMinExecCount / 2);
     trace.cfg->checkIntegrity();
     trace.cfg->mergeBlocks();
     trace.cfg->checkIntegrity();
-    // find the dispatch
-    std::set<uint64_t> potentialDispatch;
+    // find the block
+    std::vector<uint64_t> potentialDispatch;
+    std::vector<std::vector<uint64_t>> potentialFetches;
     for (const BasicBlock* bb : trace.cfg->getBasicBlocks()) {
         // does the block read a small memory region ?
-        bool read = false;
+        std::vector<uint64_t> reads;
         for (Instruction* instr : bb->instrs) {
             if (smallReadInstrs.find(instr->addr) != smallReadInstrs.end()) {
-                read = true;
-                break;
+                reads.push_back(instr->addr);
             }
         }
-        if (!read) {
+        if (reads.empty()) {
             continue;
         }
         for (const Instruction* instr : bb->instrs) {
             if (outEdges[instr->addr] >= dispatchMinOutEdges &&
                 instr->execCount >= dispatchMinExecCount) 
             {
-                // we found the dispatch !
-                potentialDispatch.insert(instr->addr);                
+                // we found the dispatch ! (and the fetches)            
+                potentialDispatch.push_back(instr->addr);
+                potentialFetches.push_back(reads);                
             }
         }
     }
     if (potentialDispatch.size() != 1) {
-        panic("didn't find the dispatch");
+        panic("didn't find the dispatch/fetch");
     }
-    uint64_t dispatch = *(potentialDispatch.begin());
-    printf("[+] Found dispatch at 0x%lx\n", dispatch);
-    return dispatch;
+    trace.dispatch = potentialDispatch[0];
+    trace.fetches = potentialFetches[0];
 }
 
 void saveTrace(const std::vector<TraceElement>& trace, std::fstream& traceDumpStream)
@@ -82,35 +83,59 @@ void saveTrace(const std::vector<TraceElement>& trace, std::fstream& traceDumpSt
         if (i > 0) {
             traceDumpStream << ", ";
         }
-        trace[i].toJson(traceDumpStream);
+        bool allRegs = (i == 0);
+        trace[i].toJson(traceDumpStream, allRegs);
     }
     traceDumpStream << "]\n";
 }
 
-void dumpTraces(const Trace& trace, uint64_t dispatchAddr, std::fstream& traceDumpStream)
+void dumpFetchDispatch(const Trace& trace, std::fstream& stream)
 {
-    printf("[+] Trace info\n");
+    stream << "{ \"dispatch\": \"" << trace.dispatch << "\", "
+        << "\"fetches\": [ ";
+    for (size_t i = 0; i < trace.fetches.size(); i++) {
+        if (i > 0) {
+            stream << ", ";
+        }
+        stream << "\"" << trace.fetches[i] << "\"";
+    }
+    stream << " ] }\n";
+}
+
+// the trace dump file contains :
+// a first line { "fetches": [0x.., 0x.., etc.], "dispatch": 0x.. }.
+// a json trace for a single opcode on each following line.
+// each trace is taken from its first fetch (included) to the next fetch after its dispatch (excluded).
+void dumpTraces(const Trace& trace, std::fstream& stream)
+{
+    // skip the header (before the first opcode trace)
+    size_t start = 0;
+    while (!trace.isFetch(trace.completeTrace[start].instr->addr)) {
+        start++;
+    }       
+    // the current trace
     std::vector<TraceElement> currTrace;
+    // did we find the dispatch for the current trace ?
     bool foundDispatch = false;
-    printf("\ttotal size: %lu\n", trace.completeTrace.size());
-    for (const TraceElement& te : trace.completeTrace) {
-        if (te.instr->addr == dispatchAddr) {
-            if (foundDispatch) {
-                // save the current trace
-                saveTrace(currTrace, traceDumpStream);
-            } 
-            else {
-                // don't save the header
-                foundDispatch = true;
-                printf("\theader size: %lu\n", currTrace.size());
-            }
+    for (size_t i = start; i < trace.completeTrace.size(); i++) {
+        const auto& te = trace.completeTrace[i];
+        if (te.instr->addr == trace.dispatch) {
+            foundDispatch = true;
+        }
+        else if (trace.isFetch(te.instr->addr) && foundDispatch) {
+            // save the current trace
+            saveTrace(currTrace, stream);
             // start a new trace
             currTrace.clear();
+            foundDispatch = false;
         }
         currTrace.push_back(te);
     }
     // don't save the footer
-    printf("\tfooter size: %lu\n", currTrace.size());
+    printf("[+] Trace size\n");
+    printf("\ttotal: %lu\n", trace.completeTrace.size());
+    printf("\theader: %lu\n", start);
+    printf("\tfooter: %lu\n", currTrace.size());
 }
 
 

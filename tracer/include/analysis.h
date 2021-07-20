@@ -10,6 +10,7 @@
 #include <stdio.h>
 
 
-uint64_t findDispatch(Trace& trace);
-void dumpTraces(const Trace& trace, uint64_t dispatchAddr, std::fstream& traceDumpStream);
+void findFetchDispatch(Trace& trace);
+void dumpFetchDispatch(const Trace& trace, std::fstream& stream);
+void dumpTraces(const Trace& trace, std::fstream& traceDumpStream);
 void dumpInstrList(const Trace& trace, FILE* codeDumpFile);

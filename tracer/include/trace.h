@@ -35,10 +35,11 @@ public:
     // the memory written to by the instruction
     std::vector<MemoryAccess> writes;
 
-    void toJson(std::fstream& stream) const;
+    // if allRegs is false, only include the value of %rip
+    void toJson(std::fstream& stream, bool allRegs) const;
 private:
     void opcodesToJson(std::fstream& stream) const;
-    void regsToJson(std::fstream& stream) const;
+    void regsToJson(std::fstream& stream, bool allRegs) const;
     void readsToJson(std::fstream& stream) const;
     void writesToJson(std::fstream& stream) const;
 };
@@ -46,15 +47,24 @@ private:
 class Trace
 {
 public:
+    // instructions by address
     std::map<uint64_t, Instruction*> instrList;
+    // the number of times each jump is taken
     std::map<Jump, uint32_t> jumps;
     std::vector<TraceElement> completeTrace;
     CFG* cfg;
 
+    // address of the dispatch instruction (usually jmp %register)
+    uint64_t dispatch;
+    // address of all the fetch instructions (usually a movzxw or several movzwb)
+    std::vector<uint64_t> fetches; 
+
     void addElement(const TraceElement& te);
     void recordJump(uint64_t from, uint64_t to);
-    Instruction* findInstr(uint64_t addr);
+    Instruction* findInstr(uint64_t addr) const;
     void addInstr(Instruction* instr);
+
+    bool isFetch(uint64_t addr) const;
 
     void removeDeadInstrs();
     void buildCFG();
