@@ -245,14 +245,11 @@ if __name__ == "__main__":
     ti.get_fetch_dispatch(fd)
     print("dispatch = 0x%x" % ti.dispatch)
     print("fetches =", [hex(addr) for addr in ti.fetches])
+    print()
 
-    ti.get_all_bytecodes()
-    #ti.get_py_ops()
-
-    for bc in ti.bytecodes:
-        print(bc)
-    
-    exit(0)
+    ti.get_py_ops()
+    #for op in ti.py_ops:
+    #    print(opcodeName(op.opc), op.arg)
 
     ti.get_reg_values()
     ti.get_write_times()

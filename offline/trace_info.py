@@ -56,6 +56,10 @@ def big_change_indices(l, threshold):
             indices.append(i)
     return indices 
 
+# extract the i-th byte from an integer
+def extract_byte(val, i):
+    return (val >> (8*i)) & 0xFF
+
 class TraceInfo:
     def __init__(self, trace_path):
         self.file = open(trace_path, 'r')
@@ -76,33 +80,38 @@ class TraceInfo:
     def get_fetch_dispatch(self, fd):
         self.dispatch = int(fd['dispatch'], 16)
         self.fetches = { int(fetch, 16) for fetch in fd['fetches'] }
-
-    def fetch_bytecodes(self, instr):
-        bc = set()
-        for read in instr['reads']:
-            size = int(read['size'], 16)
-            if size <= 2:
-                val = int(read['value'], 16)
-                for _ in range(size):
-                    bc.add(val & 0xFF)
-                    val = val >> 8
-        return bc
-
-    def get_all_bytecodes(self):
-        self.file.seek(0, os.SEEK_SET)
-        for line in self.file:
-            trace = json.loads(line)
-            for instr in trace:
-                addr = int(instr['regs']['rip'], 16)
-                if addr in self.fetches:
-                    bc = self.fetch_bytecodes(instr)
-                    self.bytecodes.append(bc)
+     
+    # get the bytes that are fetched from memory,
+    # and check they are contiguous
+    def fetch_bytes(self, trace):
+        # get the (mem_addr, byte) pairs
+        bytes = []
+        for instr in trace:
+            addr = int(instr['regs']['rip'], 16)
+            if addr in self.fetches:
+                for read in instr['reads']:
+                    rsize = int(read['size'], 16)
+                    raddr = int(read['addr'], 16)
+                    rval = int(read['value'], 16)
+                    if rsize <= 2:
+                        for i in range(rsize):
+                            bytes.append((raddr + i, extract_byte(rval, i)))
+        # check they are contiguous
+        bytes.sort(key = lambda x: x[0])
+        raddrs, rvals = zip(*bytes)
+        for i in range(len(raddrs) - 1):
+            if raddrs[i+1] - raddrs[i] != 1:
+                raise Exception("Fetch reads non-contiguous bytes from memory")
+        # return the bytes in the order they are laid-out in memory
+        return rvals
 
     def get_py_ops(self):
         self.file.seek(0, os.SEEK_SET)
         for line in self.file:
             trace = json.loads(line)
-            self.py_ops.append(PyOp(trace))
+            bytes = self.fetch_bytes(trace)
+            regs = { reg: int(val, 16) for reg, val in trace[0]['regs'].items() }
+            self.py_ops.append(PyOp(bytes, regs))
 
     def get_reg_values(self):
         # reg values
