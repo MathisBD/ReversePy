@@ -63,6 +63,7 @@ class TraceInfo:
             'rax', 'rbx', 'rcx', 'rdx', 'rsi', 'rdi', 'rsp', 'rbp', 
             'r8', 'r9', 'r10', 'r11', 'r12', 'r13', 'r14', 'r15'
         ]
+        self.bytecodes = []     # the list of all unordered bytecodes (opc + arg) read by each py_op
         self.py_ops = []        # the list of all py_ops the program contains
         self.ip = ''            # instruction pointer 
         self.sp = ''            # stack pointer
@@ -71,6 +72,31 @@ class TraceInfo:
 
     def __del__(self):
         self.file.close()
+
+    def get_fetch_dispatch(self, fd):
+        self.dispatch = int(fd['dispatch'], 16)
+        self.fetches = { int(fetch, 16) for fetch in fd['fetches'] }
+
+    def fetch_bytecodes(self, instr):
+        bc = set()
+        for read in instr['reads']:
+            size = int(read['size'], 16)
+            if size <= 2:
+                val = int(read['value'], 16)
+                for _ in range(size):
+                    bc.add(val & 0xFF)
+                    val = val >> 8
+        return bc
+
+    def get_all_bytecodes(self):
+        self.file.seek(0, os.SEEK_SET)
+        for line in self.file:
+            trace = json.loads(line)
+            for instr in trace:
+                addr = int(instr['regs']['rip'], 16)
+                if addr in self.fetches:
+                    bc = self.fetch_bytecodes(instr)
+                    self.bytecodes.append(bc)
 
     def get_py_ops(self):
         self.file.seek(0, os.SEEK_SET)

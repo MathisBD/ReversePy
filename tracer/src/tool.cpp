@@ -19,6 +19,7 @@ static FILE* codeDumpFile;
 static FILE* cfgDotFile;
 static FILE* imgFile;
 static FILE* bytecodeFile;
+static std::fstream fetchDispatchStream;
 static std::fstream traceDumpStream;
 
 static uint64_t prevAddr = 0;
@@ -275,7 +276,7 @@ void finiCallback(int code, void* v)
     }
     
     dumpInstrList(trace, codeDumpFile);
-    dumpFetchDispatch(trace, traceDumpStream);
+    dumpFetchDispatch(trace, fetchDispatchStream);
     dumpTraces(trace, traceDumpStream);
     // write the CFG after it is modified by findFetchDispatch()
     trace.cfg->writeDotGraph(cfgDotFile, 100);
@@ -288,6 +289,7 @@ void finiCallback(int code, void* v)
     fclose(cfgDotFile);
     fclose(bytecodeFile);
     traceDumpStream.close();
+    fetchDispatchStream.close();
 }
 
 void imgLoadCallback(IMG img, void* v)
@@ -347,9 +349,10 @@ int main(int argc, char* argv[])
     cfgDotFile = fopen((outputFolder + "cfg.dot").c_str(), "w");
     bytecodeFile = fopen((outputFolder + "bytecode").c_str(), "w");
     traceDumpStream.open((outputFolder + "traceDump").c_str(), std::ios::out);
-
-    // begin the trace JSON dump
+    fetchDispatchStream.open((outputFolder + "fetch_dispatch").c_str(), std::ios::out);
+    
     traceDumpStream << std::hex;
+    fetchDispatchStream << std::hex;
 
     // add PIN callbacks
     INS_AddInstrumentFunction(insCallback, 0);
