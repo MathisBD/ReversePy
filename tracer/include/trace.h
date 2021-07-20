@@ -42,3 +42,20 @@ private:
     void readsToJson(std::fstream& stream) const;
     void writesToJson(std::fstream& stream) const;
 };
+
+class Trace
+{
+public:
+    std::map<uint64_t, Instruction*> instrList;
+    std::map<Jump, uint32_t> jumps;
+    std::vector<TraceElement> completeTrace;
+    CFG* cfg;
+
+    void addElement(const TraceElement& te);
+    void recordJump(uint64_t from, uint64_t to);
+    Instruction* findInstr(uint64_t addr);
+    void addInstr(Instruction* instr);
+
+    void removeDeadInstrs();
+    void buildCFG();
+};

@@ -240,7 +240,7 @@ if __name__ == "__main__":
     # as it can (theoretically) be too big to fit in memory.
     # Using 'for line in file' is safe as it loads only one line at a time.
     ti = TraceInfo("../tracer/output/traceDump")
-    ti.get_py_ops()
+    #ti.get_py_ops()
     ti.get_reg_values()
     ti.get_write_times()
     ti.detect_ptrs()

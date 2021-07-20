@@ -83,7 +83,8 @@ SRC=tool.cpp \
 cfg.cpp \
 errors.cpp \
 mem.cpp \
-trace.cpp
+trace.cpp \
+analysis.cpp
 
 
 $(OBJDIR)%$(OBJ_SUFFIX): src/%.cpp 

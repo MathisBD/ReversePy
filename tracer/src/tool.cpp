@@ -11,6 +11,7 @@
 #include "cfg.h"
 #include "pin.H"
 #include "trace.h"
+#include "analysis.h"
 
 
 KNOB< std::string > outputFolderKnob(KNOB_MODE_WRITEONCE, "pintool", "o", "output", "specify output folder name");
@@ -20,11 +21,6 @@ static FILE* imgFile;
 static FILE* bytecodeFile;
 static std::fstream traceDumpStream;
 
-// the ids of the regions used by the python interpreter
-static std::set<uint32_t> pythonImgIds;
-
-static std::map<uint64_t, Instruction*> instrList;
-static std::map<Jump, uint32_t> jumps;
 static uint64_t prevAddr = 0;
 static std::vector<uint64_t> callAddrStack;
 
@@ -34,16 +30,8 @@ static std::string progName;
 
 // the trace of the current instruction
 static TraceElement traceEle;
-static std::vector<TraceElement> completeTrace;
-// maps opcode -> list of traces.
-// Each entry is a pair of indices, [start, end] in the complete trace.
-static std::vector<std::pair<uint64_t, uint64_t>> opcodeTraces[256];
-
-
-bool isInPythonRegion(uint64_t addr)
-{
-    return pythonImgIds.find(getImgId(addr)) != pythonImgIds.end();
-}
+// the complete trace of the program so far
+static Trace trace;
 
 // called by PIN, BEFORE the read
 void recordMemRead(ADDRINT memAddr, UINT32 memSize)
@@ -91,7 +79,7 @@ void dumpTraceElement(Instruction* instr, const CONTEXT* ctx)
     if (progRunning) {
         (instr->execCount)++;
         saveOpcodes(instr->addr, instr->size);
-        if (instr->xedOpcode == XED_ICLASS_MOVZX) {
+        //if (instr->xedOpcode == XED_ICLASS_MOVZX) {
             saveReg(REG_RAX, ctx);
             saveReg(REG_RBX, ctx);
             saveReg(REG_RCX, ctx);
@@ -108,11 +96,11 @@ void dumpTraceElement(Instruction* instr, const CONTEXT* ctx)
             saveReg(REG_R13, ctx);
             saveReg(REG_R14, ctx);
             saveReg(REG_R15, ctx);
-        }
+        //}
         saveReg(REG_RIP, ctx);
         saveReg(REG_EFLAGS, ctx);
         traceEle.instr = instr;
-        completeTrace.push_back(traceEle);
+        trace.addElement(traceEle);
 
         // reset the traceElement for the next instruction
         traceEle.opcodes.clear();
@@ -127,7 +115,7 @@ void dumpTraceElement(Instruction* instr, const CONTEXT* ctx)
 void recordJump(ADDRINT addr)
 {
     if (progRunning) {
-        jumps[Jump(prevAddr, addr)]++;
+        trace.recordJump(prevAddr, addr);
     }
     prevAddr = addr;
 }
@@ -137,7 +125,7 @@ void recordJump(ADDRINT addr)
 void recordCall(ADDRINT addr)
 {
     if (progRunning) {
-        jumps[Jump(prevAddr, addr)]++;
+        trace.recordJump(prevAddr, addr);
     }
     callAddrStack.push_back(addr);
     // I set prevAddr to 0 to cut the link between the caller and the callee
@@ -153,7 +141,7 @@ void recordCall(ADDRINT addr)
 void recordRet(ADDRINT addr)
 {
     if (progRunning) {
-        jumps[Jump(prevAddr, addr)]++;
+        trace.recordJump(prevAddr, addr);
     }
     if (callAddrStack.empty()) {
         panic("empty call stack");
@@ -191,9 +179,8 @@ void insCallback(INS ins, void* v)
     if (INS_IsNop(ins)) {
         return;
     }
-    Instruction* instr;
-    auto it = instrList.find(INS_Address(ins));
-    if (it == instrList.end()) {
+    Instruction* instr = trace.findInstr(INS_Address(ins));
+    if (instr == nullptr) {
         instr = new Instruction();
         instr->addr = INS_Address(ins);
         instr->size = INS_Size(ins);
@@ -207,10 +194,7 @@ void insCallback(INS ins, void* v)
         instr->isMemRead = INS_IsMemoryRead(ins);
         instr->disassembly = INS_Disassemble(ins);    
         // save a pointer to the instruction
-        instrList[instr->addr] = instr;
-    }
-    else {
-        instr = it->second;
+        trace.addInstr(instr);
     }
     // I have to call these InsertCall() every time, not only if we just created instr.if (INS_IsSyscall(ins)) {
     INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)syscallEntry,
@@ -272,174 +256,6 @@ void insCallback(INS ins, void* v)
     }
 }
 
-void removeDeadInstrs()
-{
-    for (auto it = instrList.begin(); it != instrList.end();) {
-        if (it->second->execCount == 0) {
-            delete it->second;
-            instrList.erase(it++);
-        }
-        else {
-            it++;
-        }
-    }
-}
-
-std::map<uint64_t, uint32_t> getOutEdges(CFG* cfg)
-{
-    std::map<uint64_t, uint32_t> outEdges;
-    for (const BasicBlock* bb : cfg->getBasicBlocks()) {
-        for (size_t i = 0; i < bb->instrs.size() - 1; i++) {
-            outEdges[bb->instrs[i]->addr] = 1;
-        }
-        outEdges[bb->instrs.back()->addr] = bb->nextBBs.size();
-    }
-    return outEdges;
-}
-
-std::set<uint64_t> getSmallReadInstrs(CFG* cfg, uint32_t maxReadSize)
-{
-    std::set<uint64_t> smallReadInstrs;
-    for (const auto& te : completeTrace) {
-        for (const auto& read : te.reads) {
-            if (read.size <= maxReadSize) {
-                smallReadInstrs.insert(te.instr->addr);
-                break;
-            }
-        }
-    }
-    return smallReadInstrs;
-}
-
-uint64_t findDispatch(CFG* cfg)
-{
-    uint32_t dispatchMinExecCount = 1000;
-    uint32_t dispatchMinOutEdges = 5;
-    uint32_t dispatchMaxReadSize = 2;
-    // get basic metrics
-    auto outEdges = getOutEdges(cfg);
-    auto smallReadInstrs = getSmallReadInstrs(cfg, dispatchMaxReadSize);
-    // trim down the cfg
-    cfg->filterBBs(dispatchMinExecCount, dispatchMinExecCount / 2);
-    cfg->checkIntegrity();
-    cfg->mergeBlocks();
-    cfg->checkIntegrity();
-    // dump the cfg for viewing purposes 
-    cfg->writeDotGraph(cfgDotFile, 20);
-    // find the dispatch
-    std::set<uint64_t> potentialDispatch;
-    for (const BasicBlock* bb : cfg->getBasicBlocks()) {
-        // does the block read a small memory region ?
-        bool read = false;
-        for (Instruction* instr : bb->instrs) {
-            if (smallReadInstrs.find(instr->addr) != smallReadInstrs.end()) {
-                read = true;
-                break;
-            }
-        }
-        if (!read) {
-            continue;
-        }
-        for (const Instruction* instr : bb->instrs) {
-            if (outEdges[instr->addr] >= dispatchMinOutEdges &&
-                instr->execCount >= dispatchMinExecCount) 
-            {
-                // we found the dispatch !
-                potentialDispatch.insert(instr->addr);                
-            }
-        }
-    }
-    if (potentialDispatch.size() != 1) {
-        panic("didn't find the dispatch");
-    }
-    uint64_t dispatch = *(potentialDispatch.begin());
-    printf("[+] Found dispatch at 0x%lx\n", dispatch);
-    return dispatch;
-}
-
-void saveTrace(const std::vector<TraceElement>& trace)
-{
-    if (trace.size() == 0) {
-        return;
-    }
-    traceDumpStream << "[";
-    for (size_t i = 0; i < trace.size(); i++) {
-        if (i > 0) {
-            traceDumpStream << ", ";
-        }
-        trace[i].toJson(traceDumpStream);
-    }
-    traceDumpStream << "]\n";
-}
-
-void dumpTraces(uint64_t dispatchAddr)
-{
-    printf("[+] Trace info\n");
-    std::vector<TraceElement> currTrace;
-    bool foundDispatch = false;
-    printf("\ttotal size: %lu\n", completeTrace.size());
-    for (const TraceElement& te : completeTrace) {
-        if (te.instr->addr == dispatchAddr) {
-            if (foundDispatch) {
-                // save the current trace
-                saveTrace(currTrace);
-            } 
-            else {
-                // don't save the header
-                foundDispatch = true;
-                printf("\theader size: %lu\n", currTrace.size());
-            }
-            // start a new trace
-            currTrace.clear();
-        }
-        currTrace.push_back(te);
-    }
-    // don't save the footer
-    printf("\tfooter size: %lu\n", currTrace.size());
-}
-
-
-void dumpInstrList()
-{
-    fprintf(codeDumpFile, "{\n");
-    for (auto it = instrList.begin(); it != instrList.end(); it++) {
-        Instruction* instr = it->second;
-        if (isInPythonRegion(instr->addr)) {
-            std::stringstream opcodeStr;
-            opcodeStr << std::hex << "[ ";
-            for (size_t i = 0; i < instr->opcodesCount; i++) {
-                if (i > 0) {
-                    opcodeStr << ", ";
-                }
-                opcodeStr << "\"" << (uint32_t)(instr->opcodes[i]) << "\"";
-            }
-            opcodeStr << " ]";
-            fprintf(codeDumpFile, "\"%lx\": { \"exec_count\": %u, \"opcodes\": %s},\n", 
-                instr->addr, instr->execCount, opcodeStr.str().c_str());
-        }
-    }
-    // remove the trailing comma
-    fseek(codeDumpFile, -2, SEEK_CUR);
-    fprintf(codeDumpFile, "}\n");
-}
-
-
-CFG* buildCFG()
-{
-    std::vector<Instruction*> cfgInstrs;
-    for (auto it = instrList.begin(); it != instrList.end(); it++) {
-        Instruction* instr = it->second;
-        if (isInPythonRegion(instr->addr)) {
-            cfgInstrs.push_back(instr);
-        }
-    }
-    CFG* cfg = new CFG(cfgInstrs, jumps);
-    cfg->checkIntegrity();
-    cfg->mergeBlocks();
-    cfg->checkIntegrity();
-    return cfg;
-}
-
 // called by PIN at the end of the program.
 // we can't write to stdout here since stdout might
 // have been closed (for PROG=ls at least).
@@ -447,12 +263,14 @@ void finiCallback(int code, void* v)
 {
     printf("[+] Finished tracing\n");
 
-    removeDeadInstrs();
-    dumpInstrList();
-
-    CFG* cfg = buildCFG(); 
-    uint64_t dispatchAddr = findDispatch(cfg);
-    dumpTraces(dispatchAddr);
+    trace.removeDeadInstrs();
+    trace.buildCFG();
+    
+    dumpInstrList(trace, codeDumpFile);
+    uint64_t dispatchAddr = findDispatch(trace);
+    dumpTraces(trace, dispatchAddr, traceDumpStream);
+    // write the CFG after it is modified by findDispatch()
+    trace.cfg->writeDotGraph(cfgDotFile, 6);
 
     printf("[+] Done\n");
 
@@ -480,7 +298,7 @@ void imgLoadCallback(IMG img, void* v)
     if (IMG_IsMainExecutable(img) ||
         IMG_Name(img).compare(0, strlen(pypyPrefix), pypyPrefix) == 0 /*||
         IMG_Name(img).compare(0, strlen(cpythonPrefix), cpythonPrefix) == 0*/) {
-        pythonImgIds.insert(IMG_Id(img));
+        markPythonImg(IMG_Id(img));
     }
 }
 

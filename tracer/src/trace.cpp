@@ -1,6 +1,7 @@
 #include "trace.h"
 #include <iostream>
 #include "errors.h"
+#include "mem.h"
 
 
 MemoryAccess::MemoryAccess()
@@ -89,4 +90,56 @@ void TraceElement::toJson(std::fstream& stream) const
         writesToJson(stream);
     }
     stream << " }";
+}
+
+void Trace::addElement(const TraceElement& te)
+{
+    completeTrace.push_back(te);
+}
+
+void Trace::recordJump(uint64_t from, uint64_t to)
+{
+    jumps[Jump(from, to)]++;
+}
+
+Instruction* Trace::findInstr(uint64_t addr)
+{
+    auto it = instrList.find(addr);
+    if (it == instrList.end()) {
+        return nullptr;
+    }
+    return it->second;
+}
+
+void Trace::addInstr(Instruction* instr)
+{
+    instrList[instr->addr] = instr;
+}
+
+void Trace::removeDeadInstrs()
+{
+    for (auto it = instrList.begin(); it != instrList.end();) {
+        if (it->second->execCount == 0) {
+            delete it->second;
+            instrList.erase(it++);
+        }
+        else {
+            it++;
+        }
+    }
+}
+
+void Trace::buildCFG()
+{
+    std::vector<Instruction*> cfgInstrs;
+    for (auto it = instrList.begin(); it != instrList.end(); it++) {
+        Instruction* instr = it->second;
+        if (isInPythonRegion(instr->addr)) {
+            cfgInstrs.push_back(instr);
+        }
+    }
+    cfg = new CFG(cfgInstrs, jumps);
+    cfg->checkIntegrity();
+    cfg->mergeBlocks();
+    cfg->checkIntegrity();
 }

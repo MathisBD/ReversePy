@@ -15,3 +15,5 @@ extern uint32_t mainImgId;
 
 uint32_t getImgId(uint64_t addr);
 void addImgRegion(ImgRegion* reg);
+void markPythonImg(uint32_t id);
+bool isInPythonRegion(uint64_t addr);
