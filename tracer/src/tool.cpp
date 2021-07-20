@@ -23,7 +23,13 @@ static std::fstream fetchDispatchStream;
 static std::fstream traceDumpStream;
 
 static uint64_t prevAddr = 0;
-static std::vector<uint64_t> callAddrStack;
+static std::vector<std::pair<uint64_t, uint64_t>> callAddrStack;
+// if non zero, this is the expected value of the next instruction
+// (e.g. after a ret we expect to go to the fallthrough of the 
+// corresponding call)
+// this is used to detect if the program uses push-ret
+// (in this case our method to build the CFG completely fails).
+static uint64_t expectedNextAddr = 0;
 
 // is the interpreted program (e.g. prog.py) running ? 
 static bool progRunning;
@@ -108,6 +114,16 @@ void dumpTraceElement(Instruction* instr, const CONTEXT* ctx)
     }
 }
 
+// if we are expecting a next address,
+// check we find it.
+void checkExpectedAddr(ADDRINT addr)
+{
+    if (expectedNextAddr != 0 && addr != expectedNextAddr) {
+        panic("didn't find expected next addresss");
+    }        
+    expectedNextAddr = 0;
+}
+
 // called each time we execute a non-call and non-ret instruction
 // even in a library (before we actually execute it).
 void recordJump(ADDRINT addr)
@@ -120,12 +136,12 @@ void recordJump(ADDRINT addr)
 
 // called each time we execute a call instruction
 // even in a library (before we actually execute it).
-void recordCall(ADDRINT addr)
+void recordCall(ADDRINT addr, ADDRINT fallthrough)
 {
     if (progRunning) {
         trace.recordJump(prevAddr, addr);
     }
-    callAddrStack.push_back(addr);
+    callAddrStack.push_back(std::make_pair(addr, fallthrough));
     // I set prevAddr to 0 to cut the link between the caller and the callee
     // so that the VM loop is more visible on the CFG.
     // If you are not interested in seeing the VM loop, consider
@@ -144,7 +160,8 @@ void recordRet(ADDRINT addr)
     if (callAddrStack.empty()) {
         panic("empty call stack");
     }
-    uint64_t callAddr = callAddrStack.back();
+    uint64_t callAddr = callAddrStack.back().first;
+    expectedNextAddr = callAddrStack.back().second;
     callAddrStack.pop_back();
     prevAddr = callAddr;
 }
@@ -156,14 +173,6 @@ void syscallEntry(ADDRINT scNum, ADDRINT arg0, ADDRINT arg1, ADDRINT arg2,
         progRunning = true;
         printf("[+] Opened file %s\n", progName.c_str());
     }
-    /*if (scNum == SYS_openat && std::string((char*)arg1) == "tototo") {
-        progRunning = true;
-        printf("[+] Opened tototo\n");
-    }
-    if (scNum == SYS_openat && std::string((char*)arg1) == "tototo_after") {
-        progRunning = false;
-        printf("[+] Opened tototo_after\n");
-    }*/
 }
 
 // called by PIN each time we encounter an instruction for 
@@ -174,9 +183,9 @@ void syscallEntry(ADDRINT scNum, ADDRINT arg0, ADDRINT arg1, ADDRINT arg2,
 // executed on a given instruction, not just the first time.
 void insCallback(INS ins, void* v)
 {
-    if (INS_IsNop(ins)) {
+    /*if (INS_IsNop(ins)) {
         return;
-    }
+    }*/
     Instruction* instr = trace.findInstr(INS_Address(ins));
     if (instr == nullptr) {
         instr = new Instruction();
@@ -204,20 +213,26 @@ void insCallback(INS ins, void* v)
         IARG_SYSARG_VALUE, 4,
         IARG_SYSARG_VALUE, 5,
         IARG_END);
+    // check next address
+    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)checkExpectedAddr,
+        IARG_CALL_ORDER, CALL_ORDER_FIRST,  // before we do the jump/call/ret stuff
+        IARG_ADDRINT, instr->addr, 
+        IARG_END);
     // record jumps
     if (INS_IsProcedureCall(ins)) {
         INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)recordCall,
-            IARG_UINT64, instr->addr,
+            IARG_ADDRINT, instr->addr,
+            IARG_ADDRINT, INS_NextAddress(ins),
             IARG_END);
     }
     else if (INS_IsRet(ins)) {
         INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)recordRet,
-            IARG_UINT64, instr->addr,
+            IARG_ADDRINT, instr->addr,
             IARG_END); 
     }
     else {
         INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)recordJump,
-            IARG_UINT64, instr->addr,
+            IARG_ADDRINT, instr->addr,
             IARG_END); 
     }
     if (isInPythonRegion(instr->addr)) {
@@ -330,11 +345,12 @@ int main(int argc, char* argv[])
     // get the name of the python program we are running
     progName = std::string(argv[argc-1]);
     if (progName.size() > 3 && progName.substr(progName.size() - 3, 3) == ".py") {
-        printf("[+] Detected you are running the python program %s\n", progName.c_str());
+        printf("[+] You are running the python program %s\n", progName.c_str());
         // wait for the interpreter to open the program before tracing it
         progRunning = false;
     }
     else {
+        printf("[+] You are not running a python program\n");
         progRunning = true;
     }
     
