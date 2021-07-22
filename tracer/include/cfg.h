@@ -35,7 +35,7 @@ public:
     uint32_t dfsState;
 
     // requires the basic block to have at least one instruction
-    uint64_t firstAddr();
+    uint64_t firstAddr() const;
 };
 
 class Edge
@@ -62,8 +62,8 @@ public:
     CFG(const std::vector<Instruction*>& instructions, 
         const std::map<Jump, uint32_t>& jumps);
     void mergeBlocks();
-    void writeDotGraph(FILE* file, uint32_t maxBBsize);
-    void checkIntegrity();
+    void writeDotGraph(FILE* file, uint32_t maxBBsize) const;
+    void checkIntegrity() const;
     std::vector<BasicBlock*> getBasicBlocks();
     void filterBBs(uint32_t bbFreqThreshold, uint32_t edgeFreqThreshold);
 private: 

@@ -1,0 +1,22 @@
+dispatch = 0x7f5913c18991
+fetches = ['0x7f5913c18974', '0x7f5913c1896e']
+
+[+] Reg info :
+	rax: 	align=0x08	distinct values=     8	max_stack_streak=     0	max_instr_streak=     0	overwrite count=    96
+	rbx: 	align=0x08	distinct values=  1309	max_stack_streak=     0	max_instr_streak=     0	overwrite count=  1937
+	rcx: 	align=0x01	distinct values=  3747	max_stack_streak=     2	max_instr_streak=     1	overwrite count=  6883
+	rdx: 	align=0x02	distinct values=   302	max_stack_streak=     1	max_instr_streak=    25	overwrite count=     0
+	rsi: 	align=0x01	distinct values=   614	max_stack_streak=     1	max_instr_streak=     1	overwrite count=   909
+	rdi: 	align=0x01	distinct values=  5193	max_stack_streak=     1	max_instr_streak=     0	overwrite count=  5593
+	rsp: 	align=0x10	distinct values=    97	max_stack_streak=     1	max_instr_streak=     0	overwrite count= 16010
+	rbp: 	align=0x02	distinct values=   302	max_stack_streak=     1	max_instr_streak=    25	overwrite count=     0
+	r8: 	align=0x01	distinct values=  3724	max_stack_streak=     1	max_instr_streak=     1	overwrite count=  8031
+	r9: 	align=0x01	distinct values=   631	max_stack_streak=     1	max_instr_streak=     0	overwrite count=  9002
+	r10: 	align=0x01	distinct values=   234	max_stack_streak=     0	max_instr_streak=     0	overwrite count=    89
+	r11: 	align=0x01	distinct values=   228	max_stack_streak=     0	max_instr_streak=     0	overwrite count=  4001
+	r12: 	align=0x08	distinct values=    82	max_stack_streak=     0	max_instr_streak=     0	overwrite count=     4
+	r13: 	align=0x20	distinct values=     1	max_stack_streak=     0	max_instr_streak=     0	overwrite count=  4932
+	r14: 	align=0x04	distinct values=     1	max_stack_streak=     0	max_instr_streak=     0	overwrite count=     0
+	r15: 	align=0x01	distinct values=   322	max_stack_streak=     2	max_instr_streak=     1	overwrite count=   105
+[+] Stack ptr candidates:  set()
+	Didn't find the stack pointer ! Aborting.

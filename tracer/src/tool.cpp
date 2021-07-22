@@ -290,11 +290,12 @@ void finiCallback(int code, void* v)
         panic("the dispatch is also a fetch");
     }
     
-    dumpInstrList(trace, codeDumpFile);
-    dumpFetchDispatch(trace, fetchDispatchStream);
-    dumpTraces(trace, traceDumpStream);
+    dumpInstrList(trace, codeDumpFile);    
     // write the CFG after it is modified by findFetchDispatch()
     trace.cfg->writeDotGraph(cfgDotFile, 100);
+    fclose(cfgDotFile);
+    dumpFetchDispatch(trace, fetchDispatchStream);
+    dumpTraces(trace, traceDumpStream);
 
     printf("[+] Done\n");
 

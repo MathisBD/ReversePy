@@ -25,7 +25,7 @@ bool operator==(const Edge& A, const Edge& B)
     return A.execCount == B.execCount && A.bb == B.bb;
 }
 
-uint64_t BasicBlock::firstAddr()
+uint64_t BasicBlock::firstAddr() const
 {
     return instrs[0]->addr;
 }
@@ -78,7 +78,7 @@ bool vectContains(const std::vector<T>& vect, const T& x)
     return std::find(vect.begin(), vect.end(), x) != vect.end();
 }
 
-void CFG::checkIntegrity()
+void CFG::checkIntegrity() const
 {
     for (auto bb : bbVect) {
         // check block is non-empty
@@ -118,7 +118,7 @@ void CFG::resetDfsStates()
 }
 
 
-void CFG::writeDotGraph(FILE* file, uint32_t maxBBSize)
+void CFG::writeDotGraph(FILE* file, uint32_t maxBBSize) const
 {
     // dotty crashes if node labels are too long (it detects a stack smashing - 
     // labels must be read into a stack allocated buffer without checking for size lol)
@@ -136,7 +136,8 @@ void CFG::writeDotGraph(FILE* file, uint32_t maxBBSize)
                 if (i != prevPrinted + 1 && i > 0) {
                     fprintf(file, ".....\\l");
                 }
-                fprintf(file, "0x%lx\t%s\\l", bb->instrs[i]->addr, bb->instrs[i]->disassembly.c_str());
+                fprintf(file, "0x%lx\t(%u)\t%s\\l", bb->instrs[i]->addr, 
+                    bb->instrs[i]->execCount, bb->instrs[i]->disassembly.c_str());
                 prevPrinted = i;
             }
         }

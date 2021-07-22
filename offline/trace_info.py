@@ -195,13 +195,15 @@ class TraceInfo:
 
             # try to match the big changes of the stack pointer and of the instr pointer
             print("[+] Big reg changes :")
-            print("\t%s:\t" % self.sp, sorted(self.reg_changes[self.sp])[:50])
+            print("\t%s:\t" % self.sp, sorted(self.reg_changes[self.sp])[:20], end = "\t")
+            print("total =", len(self.reg_changes[self.sp]))
             diff = dict()
             for reg in instr_ptr_candidates:
                 # ^ is symmetric difference
                 diff[reg] = self.reg_changes[reg] ^ self.reg_changes[self.sp]
-                print("\t%s:\t" % reg, sorted(self.reg_changes[reg])[:50])
-                print("\t\tdiff count= %d" % len(diff[reg]))
+                print("\t%s:\t" % reg, sorted(self.reg_changes[reg])[:20], end="\t")
+                print("total =", len(self.reg_changes[reg]), end="\t")
+                print("diff count =", len(diff[reg]))
             instr_ptr_candidates = set(filter(
                 lambda reg: len(diff[reg]) / float(len(self.reg_changes[self.sp]) + len(self.reg_changes[reg])) < 0.2,
                 instr_ptr_candidates
@@ -271,7 +273,11 @@ class TraceInfo:
         for i in range(len(sorted_addrs) - 1):
             curr = sorted_addrs[i]
             next = sorted_addrs[i+1]
-            if next - curr <= 100:
+            # arbitrary interval (found by trial and error).
+            # higher or lower violates the constraints that:
+            #   - blocks should not overlap
+            #   - a block's entrypoint should be at its minimal address
+            if next - curr <= 32: 
                 u.union(curr, next)
         # get the blocks
         self.blocks = u.get_sets()

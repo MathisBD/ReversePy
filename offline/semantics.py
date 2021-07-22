@@ -249,7 +249,7 @@ if __name__ == "__main__":
 
     ti.get_py_ops()
     #for op in ti.py_ops:
-    #    print(opcodeName(op.opc), op.arg)
+    #    print(pypy_opc_name[op.opc], hex(op.opc), hex(op.arg))
 
     ti.get_reg_values()
     ti.get_write_times()
@@ -270,22 +270,15 @@ if __name__ == "__main__":
     assert(trace is not None)
     emulate_ip_expr(trace, ti)
     """
-
     
     print("[+] Semantic actions for each opcode")
     sem = Semantics(ti)
     sem.compute_diffs()
-
-    """
-    for d in sem.diffs[0x83]: # CALL_FUNCTION
-        print("sp=0x%x\targ=%d\tnext_block_sp=0x%x\tofs=0x%x" %
-            (d.sp, d.arg, d.next_block_sp, d.next_block_sp - d.sp + 8*d.arg))
-    """
     
     sem.compute_actions()
     for opc, actions in sem.actions.items():
         count = len(set(d.ip for d in sem.diffs[opc]))
-        print("\t%s (observed at %d locations):" % (opcodeName(opc), count))
+        print("\t%s (observed at %d locations):" % (cpython_opc_name[opc], count))
         for act in actions:
             print("\t\t%s" % act)
     
@@ -321,9 +314,10 @@ if __name__ == "__main__":
     for i, op in enumerate(ti.py_ops):
         if (i-1) in ti.frame_changes:
             print("\n\t%d: block=%d" % (i, op.block))
-        print("\t0x%x: %s %d" % (op.regs[ti.ip], opcodeName(op.opc), op.arg))
-    
-    for i, op in enumerate(ti.py_ops):
-        if i in ti.frame_changes:
-            print("%d: 0x%x: %s %d" % (i, op.regs[ti.ip], opcodeName(op.opc), op.arg)) 
+        print("\t", end="")
+        for fp in ti.fps:
+            print("%s=0x%x" % (fp, ti.reg_vals[fp][i]), end=" ")
+
+        print("\t0x%x: %s(%d) %d" % (op.regs[ti.ip], 
+            cpython_opc_name[op.opc], op.opc, op.arg))
     
