@@ -40,7 +40,7 @@ def heapSort(arr):
 		heapify(arr, i, 0)
 
 # Driver code to test above
-arr = list(range(100))
+arr = list(range(50))
 random.shuffle(arr)
 #print(arr)
 

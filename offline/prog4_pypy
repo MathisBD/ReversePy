@@ -1,0 +1,29 @@
+dispatch = 0x7f8b22f36991
+fetches = ['0x7f8b22f36974', '0x7f8b22f3696e']
+
+[+] Register stats
+	rax: align=0x8	distinct=8
+	rbx: align=0x8	distinct=988
+	rcx: align=0x1	distinct=978
+	rdx: align=0x2	distinct=304
+	rsi: align=0x1	distinct=951
+	rdi: align=0x1	distinct=3503
+	rsp: align=0x10	distinct=100
+	rbp: align=0x2	distinct=304
+	r8: align=0x1	distinct=1991
+	r9: align=0x1	distinct=1192
+	r10: align=0x1	distinct=253
+	r11: align=0x1	distinct=214
+	r12: align=0x8	distinct=87
+	r13: align=0x20	distinct=1
+	r14: align=0x4	distinct=1
+	r15: align=0x1	distinct=659
+[+] Detecting frame pointers
+	goal_change_count=1955	goal_stay_count=16180
+	rbx:	change=1955	stay=16171
+	rsp:	change=1955	stay=16177
+	r12:	change=1955	stay=16171
+[+] Frame pointers:  ['r12', 'rbx', 'rsp']
+[+] Detecting ip
+[-] ip candidates in registers: set()
+	aborting

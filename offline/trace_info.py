@@ -2,6 +2,7 @@ import json
 from py_op import *
 import os 
 from unionfind import *
+import sys
 
 # calculate the greatest power of two that divides
 # every value in a list
@@ -63,16 +64,16 @@ def extract_byte(val, i):
 class TraceInfo:
     def __init__(self, trace_path):
         self.file = open(trace_path, 'r')
+        # the registers to look at for sp/ip/fp.
         self.regs = [
-            'rax', 'rbx', 'rcx', 'rdx', 'rsi', 'rdi', 'rsp', 'rbp', 
-            'r8', 'r9', 'r10', 'r11', 'r12', 'r13', 'r14', 'r15'
+            'rax', 'rbx', 'rcx', 'rdx', 'rsi', 'rdi', 'rsp', 'rbp',
+            'r8', 'r9', 'r10', 'r11', 'r12', 'r13', 'r14', 'r15'  
         ]
         self.bytecodes = []     # the list of all unordered bytecodes (opc + arg) read by each py_op
         self.py_ops = []        # the list of all py_ops the program contains
-        self.ip = ''            # instruction pointer 
-        self.sp = ''            # stack pointer
-        self.fp = ''            # frame pointer(s) 
-        self.frame_changes = [] # indices of the instructions that change the frame
+        self.ip_vals = []       # instruction pointer values before each opcode 
+        self.sp_vals = []       # stack pointer values before each opcode
+        self.frame_changes = [] # indices of the opcodes that change the frame
 
     def __del__(self):
         self.file.close()
@@ -113,7 +114,7 @@ class TraceInfo:
             regs = { reg: int(val, 16) for reg, val in trace[0]['regs'].items() }
             self.py_ops.append(PyOp(bytes, regs))
 
-    def get_reg_values(self):
+    def get_reg_stats(self):
         # reg values
         self.reg_vals = { reg: [] for reg in self.regs }
         self.file.seek(0, os.SEEK_SET)
@@ -123,108 +124,32 @@ class TraceInfo:
                 val = int(trace[0]['regs'][reg], 16)
                 self.reg_vals[reg].append(val)
         # reg changes
-        self.reg_changes = dict()
+        self.reg_big_changes = dict()
         for reg in self.regs:
-            self.reg_changes[reg] = set(big_change_indices(self.reg_vals[reg], 100))
-                
-    def get_write_times(self):
-        # last_write[addr] is the index of the last py_op that writes to addr
-        self.last_write = dict()
-
-        def add_write(write, time):
-            addr = int(write['addr'], 16)
-            size = int(write['size'], 16)
-            for i in range(size):
-                if (addr + i) in self.last_write and time > self.last_write[addr + i]:
-                    self.last_write[addr + i] = time
-                else:
-                    self.last_write[addr + i] = time
-
-        self.file.seek(0, os.SEEK_SET)
-        for i, line in enumerate(self.file):
-            trace = json.loads(line)
-            for instr in trace:
-                if 'writes' in instr.keys():
-                    for write in instr['writes']:
-                        add_write(write, i)                
-
-    def detect_ptrs(self):
-        stack_ptr_candidates = set()
-        instr_ptr_candidates = set()
-        # If I add 0, the frame pointers (that stay the same for 
-        # long periods of time) would be included too.
-        stack_ofs = [-16, -8, 8, 16] 
-        instr_ofs = [2]
-        print("[+] Reg info :")
+            self.reg_big_changes[reg] = set(big_change_indices(self.reg_vals[reg], 100))
+        # distinct values
+        self.distinct_vals = dict()
         for reg in self.regs:
-            # basic stats
-            distinct_count = len(set(self.reg_vals[reg]))
-            align = max_align(self.reg_vals[reg])
-            max_stack_streak = max_delta_streak(self.reg_vals[reg], stack_ofs)
-            max_instr_streak = max_delta_streak(self.reg_vals[reg], instr_ofs)
-            # overwrite : we write to an address after reg points to it
-            overwrite_count = 0
-            for r_i, addr in enumerate(self.reg_vals[reg]):
-                if addr in self.last_write:
-                    w_i = self.last_write[addr]
-                    if w_i >= r_i:
-                        overwrite_count += 1
-            print("\t%s: \talign=0x%02x\tdistinct values=%6d\tmax_stack_streak=%6d\tmax_instr_streak=%6d\toverwrite count=%6d" % \
-                (reg, align, distinct_count, max_stack_streak, max_instr_streak, overwrite_count))
-            # instr pointer ?
-            if align >= 2 and distinct_count > 10 and max_instr_streak > 10 and overwrite_count == 0:
-                instr_ptr_candidates.add(reg)
-            # stack pointer ?
-            # don't be too greedy for the max_stack_streak, I excluded 0 from the possible offsets
-            if align >= 8 and distinct_count > 10 and max_stack_streak > 10 and overwrite_count > 10:
-                stack_ptr_candidates.add(reg)
-        
-        # stack pointer
-        print("[+] Stack ptr candidates: ", stack_ptr_candidates)
-        if len(stack_ptr_candidates) != 1:
-            print("\tDidn't find the stack pointer ! Aborting.")
-            return
-        self.sp = list(stack_ptr_candidates)[0]
+            self.distinct_vals[reg] = len(set(self.reg_vals[reg]))
+        # alignment
+        self.align = dict()
+        for reg in self.regs:
+            self.align[reg] = max_align(self.reg_vals[reg])
 
-        # instr pointer
-        if self.sp in instr_ptr_candidates:
-            instr_ptr_candidates.remove(self.sp)
-        print("[+] Instr ptr candidates: ", instr_ptr_candidates)
-        if len(instr_ptr_candidates) != 1:
-            print("\tDidn't find the instruction pointer ! Continuing.")
+        print("[+] Register stats")
+        for reg in self.regs:
+            print("\t%s: align=0x%x\tdistinct=%d" % (reg, self.align[reg], self.distinct_vals[reg]))
 
-            # try to match the big changes of the stack pointer and of the instr pointer
-            print("[+] Big reg changes :")
-            print("\t%s:\t" % self.sp, sorted(self.reg_changes[self.sp])[:20], end = "\t")
-            print("total =", len(self.reg_changes[self.sp]))
-            diff = dict()
-            for reg in instr_ptr_candidates:
-                # ^ is symmetric difference
-                diff[reg] = self.reg_changes[reg] ^ self.reg_changes[self.sp]
-                print("\t%s:\t" % reg, sorted(self.reg_changes[reg])[:20], end="\t")
-                print("total =", len(self.reg_changes[reg]), end="\t")
-                print("diff count =", len(diff[reg]))
-            instr_ptr_candidates = set(filter(
-                lambda reg: len(diff[reg]) / float(len(self.reg_changes[self.sp]) + len(self.reg_changes[reg])) < 0.2,
-                instr_ptr_candidates
-            ))
-
-            print("[+] Instr ptr candidates: ", instr_ptr_candidates)
-            if len(instr_ptr_candidates) != 1:
-                print("\tDidn't find the instruction pointer ! Aborting.")
-                return 
-
-        self.ip = list(instr_ptr_candidates)[0]
-        
     def detect_frames(self):
-        # frame changes
-        # for recursive functions, the frame changes but only sp (not ip) changes
-        self.frame_changes = self.reg_changes[self.sp]
-        print("[+] Frame changes :", sorted(self.frame_changes)[:50])
-        
-        # try to detect the frame pointer
-        change_count = { reg: 0 for reg in self.regs }
-        stay_count = { reg: 0 for reg in self.regs }
+        # This seems to work : each time there is a change in the 
+        # python frame, there is also a change in the C frame 
+        # (and vice versa).
+        self.frame_changes = self.reg_big_changes['rsp']
+
+        # try to detect the frame pointers :
+        # a frame pointer's value should change exactly when the frame changes
+        change_count = defaultdict(lambda: 0)
+        stay_count = defaultdict(lambda: 0)
         for reg in self.regs:
             for i in range(len(self.py_ops) - 1):
                 d = self.reg_vals[reg][i+1] - self.reg_vals[reg][i]
@@ -238,17 +163,85 @@ class TraceInfo:
                         stay_count[reg] += 1 
         goal_change_count = len(self.frame_changes)
         goal_stay_count = len(self.py_ops) - len(self.frame_changes) - 1 # -1 because we don't count the last py_op
+        
+        print("[+] Detecting frame pointers")
         print("\tgoal_change_count=%d\tgoal_stay_count=%d" % (goal_change_count, goal_stay_count))
-        frame_ptr_candidates = set()
+        fp_candidates = set()
         for reg in self.regs:
-            if change_count[reg] / float(goal_change_count) > 0.8 and \
-                stay_count[reg] / float(goal_stay_count) > 0.8:
-                frame_ptr_candidates.add(reg)
+            if change_count[reg] / goal_change_count > 0.9 and \
+                stay_count[reg] / goal_stay_count > 0.9:
+                fp_candidates.add(reg)
                 print("\t%s:\tchange=%d\tstay=%d" % (reg, change_count[reg], stay_count[reg]))
 
-        print("[+] Frame ptr candidates: ", frame_ptr_candidates)
-        self.fps = list(frame_ptr_candidates)
+        self.fps = list(fp_candidates)
+        print("[+] Frame pointers: ", self.fps)
     
+    def detect_ip(self):
+        print("[+] Detecting ip")
+        ip_candidates = set()
+        # try regs
+        for reg in self.regs:
+            if self.align[reg] < 2:
+                continue
+            if self.distinct_vals[reg] < 10:
+                continue 
+            # a 2-byte aligned ip is expected to increment by 2
+            # a 1-byte aligned ip is expected to increment by 1
+            offsets = [self.align[reg]]
+            streak = max_delta_streak(self.reg_vals[reg], offsets)
+            if streak < 10:
+                continue 
+            # ip should have big changes at frame changes.
+            # ^ is symmetric difference (for sets).
+            diff = len(self.reg_big_changes[reg] ^ self.frame_changes)
+            if diff / len(self.reg_big_changes[reg] | self.frame_changes) > 0.2:
+                continue
+            ip_candidates.add(reg)
+        # TODO : if we didn't find any candidate, maybe look in a memory cell instead
+        # of registers ?
+        if len(ip_candidates) != 1:
+            print("[-] ip candidates in registers:", ip_candidates)
+            print("\taborting")
+            sys.exit(-1)
+        # get the values that ip takes
+        ip_reg = list(ip_candidates)[0]
+        print("\tfound an ip register : %s" % ip_reg)
+        self.ip_vals = self.reg_vals[ip_reg]
+
+    def detect_sp(self):
+        print("[+] Detecting sp")
+        sp_candidates = set()
+        # try regs
+        for reg in self.regs:
+            if self.align[reg] > 8:
+                continue
+            if self.distinct_vals[reg] < 10:
+                continue
+            # an 8-byte aligned sp is expected to increment by small multiples of 8
+            # a 1-byte aligned sp is expected to increment by small multiples of 1
+            # I didn't include 0 in the offsets so that we don't mistake a frame pointer for sp.
+            offsets = [ofs * self.align[reg] for ofs in [-2, -1, 1, 2]]
+            streak = max_delta_streak(self.reg_vals[reg], offsets)
+            if streak < 10:
+                continue 
+            # sp should have big changes at frame changes
+            diff = len(self.reg_big_changes[reg] ^ self.frame_changes)
+            if diff / len(self.reg_big_changes[reg] | self.frame_changes) > 0.2:
+                continue
+            sp_candidates.add(reg)
+        # Too many registers passed the conditions
+        if len(sp_candidates) > 1:
+            print("\tsp candidates in registers:", sp_candidates)
+            print("\taborting")
+            sys.exit(-1)
+        # We found sp !
+        if len(sp_candidates) == 1:
+            sp_reg = list(sp_candidates)[0]
+            self.sp_vals = self.reg_vals[sp_reg]
+            print("\tfound an sp register : %s" % sp_reg)
+            return 
+        # TODO : detect sp in memory cells
+
     # Partition the python instructions into blocks according
     # to their address in memory.
     # Ideally we want the instruction blocks to match functions 

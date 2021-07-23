@@ -232,6 +232,14 @@ class Semantics:
         return SpOfsPlusArg(offsets[0])
 
 
+def get_trace(ti, opc):
+    ti.file.seek(0, os.SEEK_SET)
+    for i, line in enumerate(ti.file):
+        if ti.py_ops[i].opc == opc:
+            trace = json.loads(line)
+            return trace
+    return None
+
 if __name__ == "__main__":
     # The trace file has one trace per line.
     # A trace consists of all instructions for a single py_op,
@@ -248,29 +256,23 @@ if __name__ == "__main__":
     print()
 
     ti.get_py_ops()
-    #for op in ti.py_ops:
-    #    print(pypy_opc_name[op.opc], hex(op.opc), hex(op.arg))
+    ti.get_reg_stats()
+    ti.detect_frames()
+    ti.detect_ip()
+    ti.detect_sp()
 
-    ti.get_reg_values()
-    ti.get_write_times()
-    ti.detect_ptrs()
+    sys.exit(0)
+
+    #trace = get_trace(ti, 1) # POP_TWO
+    #emulate(ti, trace)
+
+
     ti.detect_frames()
     ti.detect_instr_blocks()
 
-    """
-    trace = None
-    ti.file.seek(0, os.SEEK_SET)
-    for i, line in enumerate(ti.file):
-        trace = json.loads(line)
-        op = PyOp(trace)
-        if opcodeName(op.opc) == "JUMP_FORWARD":
-        #if opcodeName(op.opc) == "LOAD_NAME":
-            break
+    trace = get_trace(ti, 1) # POP_TWO
+    emulate_ip_expr(trace)
 
-    assert(trace is not None)
-    emulate_ip_expr(trace, ti)
-    """
-    
     print("[+] Semantic actions for each opcode")
     sem = Semantics(ti)
     sem.compute_diffs()
@@ -309,7 +311,6 @@ if __name__ == "__main__":
         if first_ins[i] != min(ti.blocks[i]):
             print("\tBlock %d: first=0x%x, min=0x%x" % (i, first_ins[i], min(ti.blocks[i])))
 
-
     print("[+] Bytecode:")
     for i, op in enumerate(ti.py_ops):
         if (i-1) in ti.frame_changes:
@@ -317,7 +318,7 @@ if __name__ == "__main__":
         print("\t", end="")
         for fp in ti.fps:
             print("%s=0x%x" % (fp, ti.reg_vals[fp][i]), end=" ")
-
+ 
         print("\t0x%x: %s(%d) %d" % (op.regs[ti.ip], 
             cpython_opc_name[op.opc], op.opc, op.arg))
     
