@@ -7,6 +7,17 @@ from emulate import *
 from collections import defaultdict
 import os
 import json
+from pypy_opcodes import pypy_opc_name 
+from cpython_opcodes import cpython_opc_name
+
+
+def all_equal(vals):
+    if len(vals) == 0:
+        return True 
+    for v in vals:
+        if v != vals[0]:
+            return False 
+    return True
 
 class Semantics:
     # the maximum absolute value of the offset in jump actions
@@ -25,7 +36,7 @@ class Semantics:
             self.arg = arg 
             # the value sp takes the next time
             # control flow returns to self.block
-            self.next_block_sp = None 
+            #self.next_block_sp = None 
 
     def __init__(self, ti):
         self.ti = ti
@@ -42,10 +53,10 @@ class Semantics:
             curr = self.ti.py_ops[i]
             next = self.ti.py_ops[i+1]
             diff = Semantics.StateDiff(
-                ip = curr.regs[self.ti.ip],
-                new_ip = next.regs[self.ti.ip],
-                sp = curr.regs[self.ti.sp],
-                new_sp = next.regs[self.ti.sp],
+                ip = self.ti.ip_vals[i],
+                new_ip = self.ti.ip_vals[i+1],
+                sp = self.ti.sp_vals[i],
+                new_sp = self.ti.sp_vals[i+1],
                 block = curr.block,
                 new_block = next.block,
                 frame_changed = (i in self.ti.frame_changes),
@@ -55,10 +66,10 @@ class Semantics:
             all_diffs.append(diff)
 
         # backward pass : compute next_block_sp
-        sp = [None for _ in range(len(self.ti.blocks))]
-        for d in reversed(all_diffs):
-            d.next_block_sp = sp[d.block]
-            sp[d.block] = d.sp
+        #sp = [None for _ in range(len(self.ti.blocks))]
+        #for d in reversed(all_diffs):
+        #    d.next_block_sp = sp[d.block]
+        #    sp[d.block] = d.sp
 
     def first_action(self, opc, methods):
         for meth in methods:
@@ -76,12 +87,12 @@ class Semantics:
                 self.jmp_abs,
                 self.jmp_cond
             ])  
-            # stack offset
-            self.first_action(opc, [
-                self.sp_ofs,
-                self.sp_ofs_plus_arg,
-                self.sp_ofs_minus_arg
-            ])
+            # stack offset (order matters)
+            #self.first_action(opc, [
+            #    self.sp_ofs,
+            #    self.sp_ofs_plus_arg,
+            #    self.sp_ofs_minus_arg
+            #])
 
     def jmp_rel(self, diffs):
         offsets = []
@@ -92,10 +103,8 @@ class Semantics:
 
         if abs(offsets[0]) > Semantics.MAX_JUMP_OFS:
             return None
-
-        for ofs in offsets:
-            if ofs != offsets[0]:
-                return None 
+        if not all_equal(offsets):
+            return None 
         return JmpRel(offsets[0])
 
     def jmp_rel_arg(self, diffs):
@@ -108,9 +117,8 @@ class Semantics:
         if abs(offsets[0]) > Semantics.MAX_JUMP_OFS:
             return None
             
-        for ofs in offsets:
-            if ofs != offsets[0]:
-                return None 
+        if not all_equal(offsets):
+            return None
         return JmpRelArg(offsets[0])
 
     def jmp_abs(self, diffs):
@@ -123,16 +131,18 @@ class Semantics:
 
         if abs(offsets[0]) > Semantics.MAX_JUMP_OFS:
             return None
-            
-        for ofs in offsets:
-            if ofs != offsets[0]:
-                return None 
+        if not all_equal(offsets):
+            return None
         return JmpAbs(offsets[0])
 
     # suppose diffs[0] is ip <- ip + k
     def jmp_cond_A(self, diffs):
         ofs = diffs[0].new_ip - diffs[0].ip
         abs_offsets = []
+
+        if abs(ofs) > Semantics.MAX_JUMP_OFS:
+            return None
+
         for d in diffs:
             if d.block != d.new_block:
                 return None 
@@ -144,11 +154,9 @@ class Semantics:
         if len(abs_offsets) == 0:
             return None
         if abs(abs_offsets[0]) > Semantics.MAX_JUMP_OFS:
+            return None            
+        if not all_equal(abs_offsets):
             return None
-            
-        for abs_ofs in abs_offsets:
-            if abs_ofs != abs_offsets[0]:
-                return None
         return JmpCond(
             ofs_rel = ofs, 
             ofs_abs = abs_offsets[0]
@@ -158,6 +166,10 @@ class Semantics:
     def jmp_cond_B(self, diffs):
         block_start = min(self.ti.blocks[diffs[0].block])
         abs_ofs = diffs[0].new_ip - block_start - diffs[0].arg
+
+        if abs(abs_ofs) > Semantics.MAX_JUMP_OFS:
+            return None
+
         offsets = []
         for d in diffs:
             if d.block != d.new_block:
@@ -171,10 +183,8 @@ class Semantics:
             return None
         if abs(offsets[0]) > Semantics.MAX_JUMP_OFS:
             return None
-            
-        for ofs in offsets:
-            if ofs != offsets[0]:
-                return None 
+        if not all_equal(offsets):
+            return None
         return JmpCond(
             ofs_rel = offsets[0], 
             ofs_abs = abs_ofs
@@ -240,7 +250,25 @@ def get_trace(ti, opc):
             return trace
     return None
 
+def get_opc_name_table():
+    version = ""
+    for i in range(len(sys.argv)):
+        if sys.argv[i] == "--opcodes":
+            assert i+1 < len(sys.argv)
+            version = sys.argv[i+1]
+            break
+    if version == "":
+        raise Exception("expected command line option --opcodes")
+
+    if version == "cpython":
+        return cpython_opc_name
+    elif version == "pypy":
+        return pypy_opc_name
+    else:
+        raise Exception("unknown opcodes version : %s" % version)
+
 if __name__ == "__main__":
+    opc_name = get_opc_name_table()
     # The trace file has one trace per line.
     # A trace consists of all instructions for a single py_op,
     # and is encoded as a json object.
@@ -251,27 +279,22 @@ if __name__ == "__main__":
     with open("../tracer/output/fetch_dispatch", 'r') as fd_file:
         fd = json.load(fd_file)
     ti.get_fetch_dispatch(fd)
-    print("dispatch = 0x%x" % ti.dispatch)
-    print("fetches =", [hex(addr) for addr in ti.fetches])
-    print()
+    print("[+] CFG info:")
+    print("\tdispatch addr = 0x%x" % ti.dispatch)
+    print("\tfetch addrs =", [hex(addr) for addr in ti.fetches])
 
     ti.get_py_ops()
     ti.get_reg_stats()
     ti.detect_frames()
-    ti.detect_ip()
-    ti.detect_sp()
-
-    sys.exit(0)
+    ti.get_ip_values()
+    ti.sp_vals = [0 for _ in range(len(ti.py_ops))]
+    ti.detect_instr_blocks()
 
     #trace = get_trace(ti, 1) # POP_TWO
     #emulate(ti, trace)
-
-
-    ti.detect_frames()
-    ti.detect_instr_blocks()
-
-    trace = get_trace(ti, 1) # POP_TWO
-    emulate_ip_expr(trace)
+    
+    #for op in ti.py_ops:
+    #    print("0x%x: %s %d" % (op.opc_addr, opc_name[op.opc], op.arg))
 
     print("[+] Semantic actions for each opcode")
     sem = Semantics(ti)
@@ -280,7 +303,7 @@ if __name__ == "__main__":
     sem.compute_actions()
     for opc, actions in sem.actions.items():
         count = len(set(d.ip for d in sem.diffs[opc]))
-        print("\t%s (observed at %d locations):" % (cpython_opc_name[opc], count))
+        print("\t%s (observed at %d locations):" % (opc_name[opc], count))
         for act in actions:
             print("\t\t%s" % act)
     
@@ -304,9 +327,9 @@ if __name__ == "__main__":
     # is it always the instruction with lowest address in the block ?
     print("[+] Checking block entry-points")
     first_ins = [-1 for _ in range(len(ti.blocks))]
-    for op in ti.py_ops:
+    for op, ip in zip(ti.py_ops, ti.ip_vals):
         if first_ins[op.block] == -1:
-            first_ins[op.block] = op.regs[ti.ip]
+            first_ins[op.block] = ip
     for i in range(len(ti.blocks)):
         if first_ins[i] != min(ti.blocks[i]):
             print("\tBlock %d: first=0x%x, min=0x%x" % (i, first_ins[i], min(ti.blocks[i])))
@@ -319,6 +342,6 @@ if __name__ == "__main__":
         for fp in ti.fps:
             print("%s=0x%x" % (fp, ti.reg_vals[fp][i]), end=" ")
  
-        print("\t0x%x: %s(%d) %d" % (op.regs[ti.ip], 
-            cpython_opc_name[op.opc], op.opc, op.arg))
+        print("\t0x%x: %s(%d) %d" % (ti.ip_vals[i], 
+            opc_name[op.opc], op.opc, op.arg))
     

@@ -61,6 +61,14 @@ def big_change_indices(l, threshold):
 def extract_byte(val, i):
     return (val >> (8*i)) & 0xFF
 
+def all_equal(vals):
+    if len(vals) == 0:
+        return True 
+    for v in vals:
+        if v != vals[0]:
+            return False 
+    return True 
+
 class TraceInfo:
     def __init__(self, trace_path):
         self.file = open(trace_path, 'r')
@@ -103,8 +111,8 @@ class TraceInfo:
         for i in range(len(raddrs) - 1):
             if raddrs[i+1] - raddrs[i] != 1:
                 raise Exception("Fetch reads non-contiguous bytes from memory")
-        # return the bytes in the order they are laid-out in memory
-        return rvals
+        # return the (mem_addr, byte) list
+        return bytes
 
     def get_py_ops(self):
         self.file.seek(0, os.SEEK_SET)
@@ -123,10 +131,6 @@ class TraceInfo:
             for reg in self.regs:
                 val = int(trace[0]['regs'][reg], 16)
                 self.reg_vals[reg].append(val)
-        # reg changes
-        self.reg_big_changes = dict()
-        for reg in self.regs:
-            self.reg_big_changes[reg] = set(big_change_indices(self.reg_vals[reg], 100))
         # distinct values
         self.distinct_vals = dict()
         for reg in self.regs:
@@ -144,7 +148,10 @@ class TraceInfo:
         # This seems to work : each time there is a change in the 
         # python frame, there is also a change in the C frame 
         # (and vice versa).
-        self.frame_changes = self.reg_big_changes['rsp']
+        self.frame_changes = set(big_change_indices(
+            self.reg_vals['rsp'],
+            100
+        ))
 
         # try to detect the frame pointers :
         # a frame pointer's value should change exactly when the frame changes
@@ -168,45 +175,20 @@ class TraceInfo:
         print("\tgoal_change_count=%d\tgoal_stay_count=%d" % (goal_change_count, goal_stay_count))
         fp_candidates = set()
         for reg in self.regs:
+            # frame pointers are aligned on a machine word boundary (8 bytes)
             if change_count[reg] / goal_change_count > 0.9 and \
-                stay_count[reg] / goal_stay_count > 0.9:
+                stay_count[reg] / goal_stay_count > 0.9 and \
+                self.align[reg] >= 8:
                 fp_candidates.add(reg)
                 print("\t%s:\tchange=%d\tstay=%d" % (reg, change_count[reg], stay_count[reg]))
 
         self.fps = list(fp_candidates)
-        print("[+] Frame pointers: ", self.fps)
+        print("\tframe pointers: ", self.fps)
     
-    def detect_ip(self):
-        print("[+] Detecting ip")
-        ip_candidates = set()
-        # try regs
-        for reg in self.regs:
-            if self.align[reg] < 2:
-                continue
-            if self.distinct_vals[reg] < 10:
-                continue 
-            # a 2-byte aligned ip is expected to increment by 2
-            # a 1-byte aligned ip is expected to increment by 1
-            offsets = [self.align[reg]]
-            streak = max_delta_streak(self.reg_vals[reg], offsets)
-            if streak < 10:
-                continue 
-            # ip should have big changes at frame changes.
-            # ^ is symmetric difference (for sets).
-            diff = len(self.reg_big_changes[reg] ^ self.frame_changes)
-            if diff / len(self.reg_big_changes[reg] | self.frame_changes) > 0.2:
-                continue
-            ip_candidates.add(reg)
-        # TODO : if we didn't find any candidate, maybe look in a memory cell instead
-        # of registers ?
-        if len(ip_candidates) != 1:
-            print("[-] ip candidates in registers:", ip_candidates)
-            print("\taborting")
-            sys.exit(-1)
-        # get the values that ip takes
-        ip_reg = list(ip_candidates)[0]
-        print("\tfound an ip register : %s" % ip_reg)
-        self.ip_vals = self.reg_vals[ip_reg]
+    def get_ip_values(self):
+        # It doesn't get any simpler than this.
+        for op in self.py_ops:
+            self.ip_vals.append(op.opc_addr)
 
     def detect_sp(self):
         print("[+] Detecting sp")
@@ -250,19 +232,13 @@ class TraceInfo:
     # (non-overlapping) instruction blocks. It should hold that 
     # a block is included in a function.
     def detect_instr_blocks(self):
-        addrs = set()
-        for op in self.py_ops:
-            ip = op.regs[self.ip]
-            addrs.add(ip)
-        u = UnionFind(addrs)
+        u = UnionFind(self.ip_vals)
         # instructions in the same frame are in the same block
         for i in range(len(self.py_ops) - 1):
             if i not in self.frame_changes:
-                curr = self.py_ops[i].regs[self.ip]
-                next = self.py_ops[i+1].regs[self.ip]
-                u.union(curr, next)
+                u.union(self.ip_vals[i], self.ip_vals[i+1])
         # instructions close together in memory are in the same block
-        sorted_addrs = sorted(addrs)
+        sorted_addrs = sorted(self.ip_vals)
         for i in range(len(sorted_addrs) - 1):
             curr = sorted_addrs[i]
             next = sorted_addrs[i+1]
@@ -270,7 +246,7 @@ class TraceInfo:
             # higher or lower violates the constraints that:
             #   - blocks should not overlap
             #   - a block's entrypoint should be at its minimal address
-            if next - curr <= 32: 
+            if next - curr <= 100: 
                 u.union(curr, next)
         # get the blocks
         self.blocks = u.get_sets()
@@ -281,5 +257,5 @@ class TraceInfo:
                 if ins_addr in b:
                     return i
             raise Exception("Invalid instruction address: 0x%x" % ins_addr)
-        for op in self.py_ops:
-            op.block = block_idx(op.regs[self.ip])
+        for op, ip in zip(self.py_ops, self.ip_vals):
+            op.block = block_idx(ip)
