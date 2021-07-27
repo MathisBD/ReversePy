@@ -40,7 +40,6 @@ def emulate(ti, trace):
             ctx.setConcreteRegisterValue(ctx.getRegister(triton_reg(reg)), val)
     
     opc = ti.fetch_bytes(trace)[0]
-    print("[+] Emulating trace of", pypy_opc_name[opc])
     for i, instr in enumerate(trace):
         ins = Instruction()
         # get the opcodes
@@ -61,3 +60,4 @@ def emulate(ti, trace):
         ctx.processing(ins)
         # print the instruction    
         print("\t", ins)
+        print("\t", instr)

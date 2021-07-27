@@ -65,6 +65,8 @@ inline void TraceElement::readsToJson(std::fstream& stream) const
     stream << " ]";
 }
 
+// BEWARE : the write['value'] is the value before the write,
+// not the value we write
 inline void TraceElement::writesToJson(std::fstream& stream) const
 {
     stream << "[ ";

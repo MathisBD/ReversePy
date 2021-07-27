@@ -3,7 +3,7 @@ from typing import DefaultDict
 from py_op import *
 from actions import *
 from trace_info import *
-from emulate import *
+#from emulate import *
 from collections import defaultdict
 import os
 import json
@@ -20,10 +20,6 @@ def all_equal(vals):
     return True
 
 class Semantics:
-    # the maximum absolute value of the offset in jump actions
-    MAX_JUMP_OFS = 0x04
-    # same but for sp actions
-    MAX_SP_OFS = 0x16
     class StateDiff:
         def __init__(self, ip, new_ip, sp, new_sp, block, new_block, frame_changed, arg):
             self.ip = ip 
@@ -45,10 +41,16 @@ class Semantics:
         self.diffs = defaultdict(lambda: [])
         # maps opcode -> list of compatible actions
         self.actions = defaultdict(lambda: [])
+        # the maximum absolute value of the offset in jump actions
+        self.MAX_JUMP_OFS = 2 * ti.ip_align
+        # same but for sp actions
+        self.MAX_SP_OFS = 2 * ti.sp_align
 
     def compute_diffs(self):
         # forward pass : collect basic data
         all_diffs = []
+        print("\tlen(sp_vals)=%d\tlen(ip_vals)=%d\tlen(py_ops)=%d" %
+            (len(self.ti.sp_vals), len(self.ti.ip_vals), len(self.ti.py_ops)))
         for i in range(len(self.ti.py_ops) - 1):
             curr = self.ti.py_ops[i]
             next = self.ti.py_ops[i+1]
@@ -88,11 +90,11 @@ class Semantics:
                 self.jmp_cond
             ])  
             # stack offset (order matters)
-            #self.first_action(opc, [
-            #    self.sp_ofs,
-            #    self.sp_ofs_plus_arg,
-            #    self.sp_ofs_minus_arg
-            #])
+            self.first_action(opc, [
+                self.sp_ofs,
+                self.sp_ofs_plus_arg,
+                self.sp_ofs_minus_arg
+            ])
 
     def jmp_rel(self, diffs):
         offsets = []
@@ -101,7 +103,7 @@ class Semantics:
                 return None
             offsets.append(d.new_ip - d.ip)
 
-        if abs(offsets[0]) > Semantics.MAX_JUMP_OFS:
+        if abs(offsets[0]) > self.MAX_JUMP_OFS:
             return None
         if not all_equal(offsets):
             return None 
@@ -114,7 +116,7 @@ class Semantics:
                 return None
             offsets.append(d.new_ip - d.ip - d.arg)
 
-        if abs(offsets[0]) > Semantics.MAX_JUMP_OFS:
+        if abs(offsets[0]) > self.MAX_JUMP_OFS:
             return None
             
         if not all_equal(offsets):
@@ -129,7 +131,7 @@ class Semantics:
             block_start = min(self.ti.blocks[d.block])
             offsets.append(d.new_ip - d.arg - block_start)
 
-        if abs(offsets[0]) > Semantics.MAX_JUMP_OFS:
+        if abs(offsets[0]) > self.MAX_JUMP_OFS:
             return None
         if not all_equal(offsets):
             return None
@@ -140,7 +142,7 @@ class Semantics:
         ofs = diffs[0].new_ip - diffs[0].ip
         abs_offsets = []
 
-        if abs(ofs) > Semantics.MAX_JUMP_OFS:
+        if abs(ofs) > self.MAX_JUMP_OFS:
             return None
 
         for d in diffs:
@@ -153,7 +155,7 @@ class Semantics:
         
         if len(abs_offsets) == 0:
             return None
-        if abs(abs_offsets[0]) > Semantics.MAX_JUMP_OFS:
+        if abs(abs_offsets[0]) > self.MAX_JUMP_OFS:
             return None            
         if not all_equal(abs_offsets):
             return None
@@ -167,7 +169,7 @@ class Semantics:
         block_start = min(self.ti.blocks[diffs[0].block])
         abs_ofs = diffs[0].new_ip - block_start - diffs[0].arg
 
-        if abs(abs_ofs) > Semantics.MAX_JUMP_OFS:
+        if abs(abs_ofs) > self.MAX_JUMP_OFS:
             return None
 
         offsets = []
@@ -181,7 +183,7 @@ class Semantics:
         
         if len(offsets) == 0:
             return None
-        if abs(offsets[0]) > Semantics.MAX_JUMP_OFS:
+        if abs(offsets[0]) > self.MAX_JUMP_OFS:
             return None
         if not all_equal(offsets):
             return None
@@ -201,14 +203,18 @@ class Semantics:
         for d in diffs:
             if d.frame_changed:
                 return None 
+            # we don't have enough data for this diff
+            # to matter : skip it
+            if d.new_sp is None or d.sp is None:
+                continue
             offsets.append(d.new_sp - d.sp)
 
-        if abs(offsets[0]) > Semantics.MAX_SP_OFS:
+        if len(offsets) == 0:
+            return None 
+        if abs(offsets[0]) > self.MAX_SP_OFS:
             return None
-
-        for ofs in offsets:
-            if ofs != offsets[0]:
-                return None 
+        if not all_equal(offsets):
+            return None 
         return SpOfs(offsets[0])
 
     def sp_ofs_minus_arg(self, diffs):
@@ -216,30 +222,38 @@ class Semantics:
         for d in diffs:
             if d.frame_changed:
                 return None
-            offsets.append(d.new_sp - d.sp + 8*d.arg)
+            # we don't have enough data for this diff
+            # to matter : skip it
+            if d.new_sp is None or d.sp is None:
+                continue
+            offsets.append(d.new_sp - d.sp + self.ti.sp_align*d.arg)
 
-        if abs(offsets[0]) > Semantics.MAX_SP_OFS:
+        if len(offsets) == 0:
+            return None 
+        if abs(offsets[0]) > self.MAX_SP_OFS:
             return None
-            
-        for ofs in offsets:
-            if ofs != offsets[0]:
-                return None 
-        return SpOfsMinusArg(offsets[0])
+        if not all_equal(offsets):
+            return None 
+        return SpOfsMinusArg(self.ti.sp_align, offsets[0])
     
     def sp_ofs_plus_arg(self, diffs):
         offsets = []
         for d in diffs:
             if d.frame_changed:
                 return None
-            offsets.append(d.new_sp - d.sp - 8*d.arg)
-
-        if abs(offsets[0]) > Semantics.MAX_SP_OFS:
-            return None
-            
-        for ofs in offsets:
-            if ofs != offsets[0]:
-                return None 
-        return SpOfsPlusArg(offsets[0])
+            # we don't have enough data for this diff
+            # to matter : skip it
+            if d.new_sp is None or d.sp is None:
+                continue
+            offsets.append(d.new_sp - d.sp - self.ti.sp_align*d.arg)
+        
+        if len(offsets) == 0:
+            return None 
+        if abs(offsets[0]) > self.MAX_SP_OFS:
+            return None  
+        if not all_equal(offsets):
+            return None 
+        return SpOfsPlusArg(self.ti.sp_align, offsets[0])
 
 
 def get_trace(ti, opc):
@@ -287,11 +301,19 @@ if __name__ == "__main__":
     ti.get_reg_stats()
     ti.detect_frames()
     ti.get_ip_values()
-    ti.sp_vals = [0 for _ in range(len(ti.py_ops))]
+   
+    """
+    trace = get_trace(ti, 1) # POP_TWO
+    print("[+] Emulating trace of POP")
+    mem = ti.get_initial_mem(trace)
+    for addr, byte in mem.items():
+        print("0x%x: 0x%x" % (addr, byte))
+    emulate(ti, trace)
+    """
+
+    ti.get_sp_values()
     ti.detect_instr_blocks()
 
-    #trace = get_trace(ti, 1) # POP_TWO
-    #emulate(ti, trace)
     
     #for op in ti.py_ops:
     #    print("0x%x: %s %d" % (op.opc_addr, opc_name[op.opc], op.arg))

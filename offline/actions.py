@@ -53,17 +53,21 @@ class SpOfs(Action):
     def __repr__(self):
         return "sp <- sp %s" % format_offset(self.ofs)
 
-# SP <- SP + 8*arg + k
+# SP <- SP + A*arg + k
+# A is the alignment of SP (e.g. : 8 or 1)
 class SpOfsPlusArg(Action):
-    def __init__(self, ofs):
-        self.ofs = ofs 
+    def __init__(self, align, ofs):
+        self.ofs = ofs
+        self.align = align 
     def __repr__(self):
-        return "sp <- sp + 8*arg %s" % format_offset(self.ofs)
+        return "sp <- sp + %d*arg %s" % (self.align, format_offset(self.ofs))
         
-# SP <- SP - 8*arg + k
+# SP <- SP - A*arg + k
+# A is the alignment of SP (e.g. : 8 or 1)
 class SpOfsMinusArg(Action):
-    def __init__(self, ofs):
-        self.ofs = ofs 
+    def __init__(self, align, ofs):
+        self.ofs = ofs
+        self.align = align 
     def __repr__(self):
-        return "sp <- sp - 8*arg %s" % format_offset(self.ofs)
+        return "sp <- sp - %d*arg %s" % (self.align, format_offset(self.ofs))
         

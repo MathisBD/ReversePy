@@ -44,9 +44,11 @@ static Trace trace;
 void recordMemRead(ADDRINT memAddr, UINT32 memSize)
 {
     if (progRunning) {
-        uint64_t value;
-        memmove(&value, (void*)memAddr, memSize);
-        value &= (1 << (8*memSize)) - 1; // zero out the irrelevant part
+        uint64_t value = 0;
+        uint32_t count = PIN_SafeCopy((void*)&value, (void*)memAddr, memSize);
+        if (count < memSize) {
+            panic("couldn't get memory read at address 0x%lx", memAddr);
+        }
         traceEle.reads.emplace_back((uint64_t)memAddr, (uint8_t)memSize, value);
     }
 }
@@ -56,7 +58,12 @@ void recordMemRead(ADDRINT memAddr, UINT32 memSize)
 void recordMemWrite(ADDRINT memAddr, UINT32 memSize)
 {
     if (progRunning) {
-        traceEle.writes.emplace_back((uint64_t)memAddr, (uint8_t)memSize, 0);
+        uint64_t value = 0;
+        uint32_t count = PIN_SafeCopy((void*)&value, (void*)memAddr, memSize);
+        if (count < memSize) {
+            panic("couldn't get memory read at address 0x%lx", memAddr);
+        }
+        traceEle.writes.emplace_back((uint64_t)memAddr, (uint8_t)memSize, value);
     }
 }
 
@@ -183,9 +190,6 @@ void syscallEntry(ADDRINT scNum, ADDRINT arg0, ADDRINT arg1, ADDRINT arg2,
 // executed on a given instruction, not just the first time.
 void insCallback(INS ins, void* v)
 {
-    /*if (INS_IsNop(ins)) {
-        return;
-    }*/
     Instruction* instr = trace.findInstr(INS_Address(ins));
     if (instr == nullptr) {
         instr = new Instruction();

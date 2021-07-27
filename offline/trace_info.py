@@ -5,11 +5,11 @@ from unionfind import *
 import sys
 
 # calculate the greatest power of two that divides
-# every value in a list
+# every value in a list, except the None values
 def max_align(vals):
     def is_aligned(vals, d):
         for v in vals:
-            if v % d != 0:
+            if v is not None and v % d != 0:
                 return False 
         return True
     def only_zeros(vals):
@@ -20,16 +20,20 @@ def max_align(vals):
     # edge cases
     if len(vals) == 0:
         return 0
+    if len(set(vals)) == 1 and vals[0] is None:
+        return 0
     if only_zeros(vals):
         return 0
     # main loop
     d = 1
-    while True:
+    while d <= 64:
         if is_aligned(vals, 2*d):
             d *= 2
         else:
             return d
+    return d
 
+"""
 # Calculate the maximum number of 
 # consecutive increases by a number in 'deltas'.
 # Example: for the values [18, 4, 6, 8, 5, 7, 16, 14, 5],
@@ -49,6 +53,7 @@ def max_delta_streak(l, deltas):
             curr_streak = 0
         prev_val = val
     return max_streak
+"""
 
 def big_change_indices(l, threshold):
     indices = []
@@ -189,40 +194,139 @@ class TraceInfo:
         # It doesn't get any simpler than this.
         for op in self.py_ops:
             self.ip_vals.append(op.opc_addr)
+        self.ip_align = max_align(self.ip_vals)
 
-    def detect_sp(self):
-        print("[+] Detecting sp")
-        sp_candidates = set()
-        # try regs
-        for reg in self.regs:
-            if self.align[reg] > 8:
-                continue
-            if self.distinct_vals[reg] < 10:
-                continue
-            # an 8-byte aligned sp is expected to increment by small multiples of 8
-            # a 1-byte aligned sp is expected to increment by small multiples of 1
-            # I didn't include 0 in the offsets so that we don't mistake a frame pointer for sp.
-            offsets = [ofs * self.align[reg] for ofs in [-2, -1, 1, 2]]
-            streak = max_delta_streak(self.reg_vals[reg], offsets)
-            if streak < 10:
+    def is_possible_sp(self, vals):
+        align = max_align(vals)
+        if align > 8: 
+            return False
+        if len(set(vals)) < 10:
+            return False 
+        # an 8-byte aligned sp is expected to increment by small multiples of 8
+        # a 1-byte aligned sp is expected to increment by small multiples of 1
+        # I didn't include 0 in the offsets so that we don't mistake a frame pointer for sp.
+        offsets = [ofs * align for ofs in [-2, -1, 1, 2]]
+        max_streak = 0
+        curr_streak = 0
+        pops = 0
+        nones = 0
+        for i in range(len(vals) - 1):
+            # frame changes break the relationships between
+            # the values of sp
+            if i in self.frame_changes:
                 continue 
-            # sp should have big changes at frame changes
-            diff = len(self.reg_big_changes[reg] ^ self.frame_changes)
-            if diff / len(self.reg_big_changes[reg] | self.frame_changes) > 0.2:
+            if vals[i] is None:
+                nones += 1
+                continue 
+            if vals[i+1] is None:
                 continue
-            sp_candidates.add(reg)
-        # Too many registers passed the conditions
-        if len(sp_candidates) > 1:
-            print("\tsp candidates in registers:", sp_candidates)
-            print("\taborting")
-            sys.exit(-1)
-        # We found sp !
-        if len(sp_candidates) == 1:
-            sp_reg = list(sp_candidates)[0]
-            self.sp_vals = self.reg_vals[sp_reg]
-            print("\tfound an sp register : %s" % sp_reg)
+            # update the offset streak
+            if (vals[i+1] - vals[i]) in offsets:
+                curr_streak += 1
+                max_streak = max(max_streak, curr_streak)
+            else:
+                curr_streak = 0
+            # update the pop count
+            if vals[i+1] - vals[i] == -align:
+                pops += 1
+        # sp should be read/written most of the time
+        if nones / float(len(vals)) >= 0.5:
+            return False 
+        # a reasonnable proportion of the opcodes should
+        # pop the stack (e.g. all arithmetic operations do)
+        if pops / float(len(vals)) < 0.1:
+            return False 
+        if max_streak < 10:
+            return False 
+        return True 
+        
+    # returns the initial contents of all the 8-byte ALIGNED memory 
+    # accessed by an opcode trace
+    def get_initial_mem(self, trace):
+        mem = dict()
+        def update_mem(access):
+            addr = int(access['addr'], 16)
+            val = int(access['value'], 16)
+            if addr % 8 == 0 and addr not in mem:
+                mem[addr] = val
+
+        for instr in trace:
+            if 'reads' in instr:
+                for read in instr['reads']:
+                    update_mem(read)
+            if 'writes' in instr:
+                for write in instr['writes']:
+                    update_mem(write)
+        return mem
+
+    # returns the list of values taken by each memory cell
+    # that is at a fixed offset from a frame pointer.
+    # e.g.: if %esp and %ebx are frame pointers, this returns 
+    # the values taken in 0(%esp), 8(%esp), 16(%esp), 24(%esp), ...  
+    # and in 0(%ebx), 8(%ebx), ...
+    def get_frame_mem(self, ofs_count):
+        # vals[fp][ofs][i] is the value taken by [fp + 8*ofs] before opcode i.
+        vals = dict()
+        for fp in self.fps:
+            vals[fp] = []
+            for ofs in range(ofs_count):
+                vals[fp].append([])
+        # return all the (fp, ofs) pairs that correspond to a memory address
+        def all_fp_ofs(i, addr):
+            for fp in self.fps:
+                base = self.reg_vals[fp][i]
+                assert base % 8 == 0
+                q = (addr - base) // 8
+                r = (addr - base) % 8
+                if r == 0 and 0 <= q < ofs_count:
+                    yield fp, q 
+
+        # go through the whole trace
+        self.file.seek(0)
+        for i, line in enumerate(self.file):
+            trace = json.loads(line)
+            # values we read/write
+            mem = self.get_initial_mem(trace)
+            for addr in mem:
+                for fp, ofs in all_fp_ofs(i, addr):
+                    assert len(vals[fp][ofs]) == i
+                    vals[fp][ofs].append(mem[addr])
+            # unknown values
+            for fp in self.fps:
+                for ofs in range(ofs_count):
+                    if len(vals[fp][ofs]) <= i:
+                        vals[fp][ofs].append(None)
+        return vals 
+        
+
+    def get_sp_values(self):
+        print("[+] Detecting sp")
+        # try registers 
+        count = 0
+        for reg in self.regs:
+            if self.is_possible_sp(self.reg_vals[reg]):
+                print("\tSp candidate in reg %s" % reg)
+                self.sp_vals = self.reg_vals[reg]
+                self.sp_align = max_align(self.sp_vals)
+                count += 1
+        if count == 1:
+            print("\tFound sp in register !")
             return 
-        # TODO : detect sp in memory cells
+        # try memory cells
+        count = 0
+        vals = self.get_frame_mem(10)
+        for fp in self.fps:
+            for ofs in range(len(vals[fp])):
+                if self.is_possible_sp(vals[fp][ofs]):
+                    print("\tSp candidate at [%s + 0x%x]" % (fp, 8*ofs))
+                    self.sp_vals = vals[fp][ofs]
+                    self.sp_align = max_align(self.sp_vals)
+                    count += 1
+        if count == 1:
+            print("Found sp in memory cell!")
+            return 
+        print("[-] Didn't find sp! aborting")
+        sys.exit(-1)
 
     # Partition the python instructions into blocks according
     # to their address in memory.

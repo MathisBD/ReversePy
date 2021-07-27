@@ -13,6 +13,8 @@ class MemoryAccess
 public:
     uint64_t addr;
     uint8_t size;
+    // BEWARE : for write this is the value before the write,
+    // not the value we write
     uint64_t value;
 
     MemoryAccess();
