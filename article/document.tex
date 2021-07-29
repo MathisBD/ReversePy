@@ -4,19 +4,11 @@
 \usepackage{lmodern}
 \usepackage[a4paper]{geometry}
 \usepackage{babel}
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb,amsfonts,amsthm,geometry,verbatim,enumerate,float}
 
-\title{Title bla blah}
 
-\author{Mathis Bouverot-Dupuis}
-\date{June \& July 2021}
 
-\begin{document}
-
-\maketitle 
-
-\begin{abstract}
-	
-\end{abstract}
 
 
 \iffalse
@@ -30,8 +22,7 @@ Intro : after context, tell how my work is different : shallow description of th
 1. Recognizing the VM execution
 	-> cfg : (with some pictures)
 		-> how I chose to build the cfg
-		-> first try : we can see the computed gotos
-		-> second try : centralized fetch
+		-> aside : cpython's computed gotos
 	-> extracting traces for each opcode (pin tool)
 		-> what is a trace precisely (where do we break it) ?
 		-> maybe an example for a really short trace (e.g. I think jump_absolute is ~20 lines) : highlight fetch/dispatch/opcode
@@ -88,4 +79,142 @@ Intro : after context, tell how my work is different : shallow description of th
 	
 \fi 
 
+\begin{document}
+	\title{L3 internship: Shallow description of the Python Virtual Machine}
+	\author{Mathis Bouverot-Dupuis}
+	\date{June \& July 2021}
+	
+	\maketitle 
+	
+	\tableofcontents
+	\newpage
+
+\section{Introduction}
+This report accounts for the work done with Alexandre Talon and Guillaume Bonfante, during June and July of 2021 in the LORIA laboratory (Nancy). Over the course of these two months, I studied the problem of recognizing and describing virtual machines (VMs) from their execution traces.
+
+% Describe informally what a VM is
+A VM is an abstract version of a computer system : it is a program that reads a list of instructions (often called bytecode) and executes them. It's design is based on that of physical machines. The execution of an instruction consists in :
+\begin{enumerate}
+	\item Fetch : read the instruction from memory.
+	\item Decode : parse the instruction. A typical format divides an instruction into an opcode followed by zero or more arguments (similar to machine code).
+	\item Dispatch : based on the opcode, decide which code (or function) to run.
+	\item Execute : carry through the semantics of the instruction. This is where the VM's internal state is updated and input/output operations are performed.
+\end{enumerate}
+The serial execution of several instructions forms the VM loop.
+
+% Context + other papers
+
+An important class of virtual machines are programming languages interpreters, such as the Python interpreter (CPython) and the Java Virtual Machine (JVM). During this internship I focussed on different two Python VMs : CPython (the standard python interpreter) and PyPy. 
+
+% How my approach is different
+
+% Describe structure of report :
+% 1. finding the fetch/dispatch
+% 2. finding the VM state
+% 3. semantic actions of opcodes
+
+\section{Recognizing the VM execution}
+
+We will now describe in more detail our starting point. We give ourselves a VM to analyze (for instance the CPython interpreter). We assume that we do not have access to the source code or to the machine code of the VM executable. What we do allow ourselves to use is the execution trace of single runs of the VM : the ordered list of machine instructions the VM executable uses to run a given program. Note that this does not give us access to the complete machine code of the VM executable, nor to the bytecode instructions of the program the VM runs. We obtain this execution trace using a custom Intel PIN tracer.
+
+The first step to analyzing the VM is thus to recognize it in the execution trace : can we recognize the fetch-decode-dispatch-execute pattern ?
+
+\subsection{Building a CFG}
+
+We start by building the control flow graph (CFG) from the VM trace. We group instructions by basic blocks : a sequence of instructions that has only one entry point and one exit point, and build a graph whose vertices are basic blocks and whose edges indicate branches taken during the execution.
+
+More precisely : for an machine instruction $I$, we call $next(I)$ (resp. $prev(I)$) the set of instructions that immediately follow (resp. precede) $I$ in the execution trace. A basic block is then an ordered list of instructions $I_1, \dots I_n$ such that $\forall k \in [1, n-1], next(I_k) = \{I_{k+1}\} \textrm{ and } prev(I_{k+1}) = \{I_k\}$. We of course require basic blocks to be non-empty, and maximal for inclusion (i.e. either $prev(I_1)$ is of size at least 2 or $I_1$ is the first instruction in the trace, and similarly for $I_n$). Note that two consecutive instructions in a basic block do not have to be consecutive in memory (example : an unconditional branch).
+
+We then build a graph on the basic blocks. We add an edge from a block $(I_k)_{k \in [1,n]}$ to a block $(J_k)_{k \in [1, m]}$ if and only if $J_1 \in next(I_n)$, which is equivalent to $I_n \in prev(J_1)$.
+
+As the size and complexity of CFGs built this way grows very fast, we apply some additional rules to simplify the graph. Each time we see a $call$ instruction, 
+
+
+\begin{figure}[H]
+	
+	\centering
+	\begin{tikzpicture}[->, scale=0.9, transform shape, thick,bb/.style={draw,box,thick, inner sep=0pt,minimum size=5mm}]
+	
+	\node (call) at (0,0) [bb] {...\\call};
+	\node (ret) at (-2,2) [bb] {...\\ret};
+	\node (fallthrough) at (-4,0) [bb] {...};
+	
+	\draw (call) -> (ret)
+	\draw (ret) -> (fallthrough)
+	
+	\end{tikzpicture}
+	\caption{Caption}
+	\label{label}
+\end{figure}
+
+
+\subsection{Finding fetch and dispatch}
+
+The basic idea to find the fetch, decode and dispatch is to assume that all bytecodes share the same machine instructions for the fetch-decode-dispatch, as in (ref to cfg image, with filtered blocks). 
+Note that this is a somewhat restrictive assumption, albeit necessary for this method to work. Some VM implementations duplicate the fetch-decode-dispatch code for each different bytecode (see other cfg image) : most notably CPython does so. This optimization ("computed-gotos") can thankfully be disabled when compiling CPython. In all my experiments I used this modified CPython version.
+
+We look for a basic block that has the following properties :
+\begin{itemize}
+	\item It is executed a large number of times (because it is shared between all bytecodes).
+	\item It contains at least one instruction that reads a few bytes from memory (the fetch).
+	\item It has a large number of outgoing edges (the dispatch).
+\end{itemize} 
+
+Unfortunately, this method is too restrictive: the fetch-decode-dispatch aren't always in the same basic block. There can be branches (e.g. to check for a termination condition) between the fetch and the dispatch, as shown in (ref to unfiltered cfg image). To handle this issue, we assume the fetch-decode-dispatch are in the same basic block in the CFG after we have filtered out some irrelevant details. 
+
+The way we filter the CFG is by removing basic blocks and edges that aren't executed a significant number of times. This way we only retain the main structure of the graph, abstracting away the less often taken branches. However we might remove some or most of the bytecode execution code from the graph (we only retain the opcodes executed a lot of times) (maybe image comparing filtered and unfiltered ?): the unfiltered CFG is a good place to look for the dispatch, and the filtered CFG is the place to look for the fetch-decode-dispatch block. 
+
+We thus look for a basic block in the filtered CFG that has the following properties :
+\begin{itemize}
+	\item It is executed a large number of times.
+	\item It contains at least one instruction that reads a few bytes from memory.
+	\item The corresponding block in the unfiltered CFG has a large number of outgoing edges.
+\end{itemize}
+
+Once we have found the fetch, it is easy to find the bytecode : we simply get the value read by the fetch. We can also divide the trace into chunks corresponding to each bytecode, and remove the irrelevant parts of the VM trace (initialization and finalization code) : we obtain a list of small traces for each bytecode.
+
+\section{Abstract VM model}
+
+Before we can continue the analysis any further, we give ourselves an abstract VM model. While the previous section didn't assume much about the VM, this model follows more closely the Python VM.
+
+\subsection{Definition}
+
+We assume a stack-based VM, with no registers. It's internal state consists in :
+\begin{itemize}
+	\item Code block : a list of instructions. Each instruction is 2 bytes wide, the first byte being the opcode (example : ADD, POP, JMP) and the second byte being an argument.
+	\item Value stack : a stack of Python values (objects). The contents of the stack are opaque to us. However all the values in the stack are of the same size.
+	\item A stack of frames. Each frame corresponds to the execution of some Python function. A frame has its own code block and value stack. 
+	\item Pointers to : the current frame, the current bytecode, the top of the current value stack.
+\end{itemize}
+
+The term "pointer" is intentionally vague : a pointer could be stored in a physical register or in a memory cell, it could contain the address of the object it points to or be an index into a list. During experiments I had to make additional assumptions on the pointers, as will be explained in the following sections.
+
+\subsection{Finding pointers}
+
+% values : only at the fetch/decode
+
+% goal : find the value of ip and sp
+
+% ip : easy
+% code blocks
+
+
+% frame changes : esp
+% frame pointers : in registers
+
+% sp : 
+% properties
+% looking in registers
+% looking at [fp + ofs]
+
+
+
+
+\section{Opcode semantics}
+
+
+\section{Experimental setup \& conclusion}
+
+
 \end{document}
+

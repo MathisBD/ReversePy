@@ -294,8 +294,18 @@ class TraceInfo:
             # unknown values
             for fp in self.fps:
                 for ofs in range(ofs_count):
-                    if len(vals[fp][ofs]) <= i:
-                        vals[fp][ofs].append(None)
+                    assert len(vals[fp][ofs]) in [i, i+1]
+                    # we don't have the value yet
+                    if len(vals[fp][ofs]) == i:
+                        v = None 
+                        # try to reuse the previous value
+                        """
+                        addr = self.reg_vals[fp][i] + 8*ofs
+                        if i > 0 and self.reg_vals[fp][i] == self.reg_vals[fp][i-1] and
+                            not written[i-1][addr]:
+                            v = vals[fp][ofs][i-1] 
+                        """
+                        vals[fp][ofs].append(v)
         return vals 
         
 

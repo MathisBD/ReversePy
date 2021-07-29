@@ -1,0 +1,11 @@
+\babel@toc {nil}{}
+\contentsline {section}{\numberline {1}Introduction}{2}%
+\contentsline {section}{\numberline {2}Recognizing the VM execution}{2}%
+\contentsline {subsection}{\numberline {2.1}Building a CFG}{2}%
+\contentsline {subsection}{\numberline {2.2}Finding the opcode traces}{3}%
+\contentsline {section}{\numberline {3}Abstract VM model}{3}%
+\contentsline {subsection}{\numberline {3.1}Definition}{3}%
+\contentsline {subsection}{\numberline {3.2}Additional (basic) assumptions}{3}%
+\contentsline {subsection}{\numberline {3.3}Finding registers}{3}%
+\contentsline {section}{\numberline {4}Opcode semantics}{3}%
+\contentsline {section}{\numberline {5}Experimental setup \& conclusion}{3}%
