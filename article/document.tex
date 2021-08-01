@@ -6,8 +6,9 @@
 \usepackage{babel}
 \usepackage{graphicx}
 \usepackage{amsmath,amssymb,amsfonts,amsthm,geometry,verbatim,enumerate,float}
-
-
+\usepackage{tikz}
+\usetikzlibrary{shapes.multipart}
+\usetikzlibrary{arrows.meta}
 
 
 
@@ -130,22 +131,28 @@ We then build a graph on the basic blocks. We add an edge from a block $(I_k)_{k
 As the size and complexity of CFGs built this way grows very fast, we apply some additional rules to simplify the graph. Each time we see a $call$ instruction, 
 
 
+
 \begin{figure}[H]
 	
 	\centering
-	\begin{tikzpicture}[->, scale=0.9, transform shape, thick,bb/.style={draw,box,thick, inner sep=0pt,minimum size=5mm}]
+	\begin{tikzpicture}[every text node part/.style={align=left},
+	bb/.style={draw,rectangle,thick,minimum width=2cm,align=left}]
+	
+	%[->, scale=0.9, transform shape, thick,bb/.style={draw,box,thick, inner sep=0pt,minimum size=5mm}]
 	
 	\node (call) at (0,0) [bb] {...\\call};
-	\node (ret) at (-2,2) [bb] {...\\ret};
-	\node (fallthrough) at (-4,0) [bb] {...};
+	\node (ret) at (2,-2) [bb] {...\\ret};
+	\node (fallthrough) at (0,-4) [bb] {...};
 	
-	\draw (call) -> (ret)
-	\draw (ret) -> (fallthrough)
+	\draw [-{Stealth[scale=2]}] (call) -> (ret);
+	\draw [-{Stealth[scale=2]}] (ret) -> (fallthrough);
 	
 	\end{tikzpicture}
+	
 	\caption{Caption}
 	\label{label}
 \end{figure}
+ 
 
 
 \subsection{Finding fetch and dispatch}
@@ -176,37 +183,59 @@ Once we have found the fetch, it is easy to find the bytecode : we simply get th
 \section{Abstract VM model}
 
 Before we can continue the analysis any further, we give ourselves an abstract VM model. While the previous section didn't assume much about the VM, this model follows more closely the Python VM.
-
 \subsection{Definition}
 
 We assume a stack-based VM, with no registers. It's internal state consists in :
 \begin{itemize}
-	\item Code block : a list of instructions. Each instruction is 2 bytes wide, the first byte being the opcode (example : ADD, POP, JMP) and the second byte being an argument.
-	\item Value stack : a stack of Python values (objects). The contents of the stack are opaque to us. However all the values in the stack are of the same size.
-	\item A stack of frames. Each frame corresponds to the execution of some Python function. A frame has its own code block and value stack. 
-	\item Pointers to : the current frame, the current bytecode, the top of the current value stack.
+	\item a set of code blocks 
+	\item a set of value stacks 
+	\item a stack of frames.  
+	\item pointers to the current frame ($fp$), the current bytecode ($ip$) and the top of the current value stack ($sp$)
 \end{itemize}
 
-The term "pointer" is intentionally vague : a pointer could be stored in a physical register or in a memory cell, it could contain the address of the object it points to or be an index into a list. During experiments I had to make additional assumptions on the pointers, as will be explained in the following sections.
+A code block is a list of instructions. Each instruction is 2 bytes wide, the first byte being the opcode (example : ADD, POP, JMP) and the second byte being an argument. A code block contains all the code a given Python function can execute.
+
+A value stack is a stack of Python values (objects). The contents of the stack are opaque to us. However all the values in the stack are contiguous in memory and of the same size.
+
+Each frame corresponds to the execution of some Python function. A frame has its own code block and value stack.
+
+The term "pointer" is intentionally vague : a pointer could be stored in a physical register or in a memory cell, it could contain the address of the object it points to or be an index into a list. During experiments I had to make additional assumptions about pointers, as will be explained in the following sections.
+
+We will write $ptr \leftarrow f(ptr)$ where $f$ is any function and $ptr$ is $ip$, $sp$ or $fp$ to indicate that a given opcode changes the value of $ptr$ to $f(ptr)$.
 
 \subsection{Finding pointers}
 
-% values : only at the fetch/decode
+We assume the state of the VM is valid at the fetch (and at the dispatch). At other points in the execution trace, the registers and memory cells used to store the VM pointers may be used for different purposes. Our goal is then to find the most information we can about the VM state before each bytecode.
 
-% goal : find the value of ip and sp
+\subsubsection{Finding $ip$}
 
-% ip : easy
-% code blocks
+Our method for finding the fetch gives us the instruction(s) that read the bytecode, and thus the address of the bytecode in memory : this gives us the value of $ip$ before each opcode.
 
+\subsubsection{Finding $fp$}
 
-% frame changes : esp
-% frame pointers : in registers
+To find the frame pointers, we must make another assumption : that the C stack of the interpreter corresponds to the stack of the Python program it is running (remember we only look at the program state between bytecodes). Changes in $\%rsp$ should then give us the points at which the frame changes. Looking at registers that also change exactly and only at the same time as $\%rsp$ (and are also aligned on 8 bits) gives us additional frame pointers : pointers to some frame data (for instance, a C struct on the heap).
 
-% sp : 
-% properties
-% looking in registers
-% looking at [fp + ofs]
+% todo : expand on this
+Knowing the values of the frame pointers, we then tried to recognize the stack structure of frames, but some opcodes seem to operate on the stack of frame in non-standard ways : i.e. other than push or pop one, a even several, frame(s).
 
+\subsubsection{Finding $sp$}
+
+A first challenge is where to look for $sp$ : registers or memory ? It turns out it can be in both, depending on the interpreter (in a register for CPython, in memory for PyPy). Looking for $sp$ in registers is straightforward, as there are a very limited number of them. However memory is more complex : we can't scan through each memory cell. What we can hope for is that $sp$ is stored in a C struct pointed to by a frame pointer : $sp$ must be used very often, so requiring more than one pointer indirection to access it seems very inefficient. We thus look for $sp$ near addresses pointed to by frame pointers.  More precisely, we assume $sp$ will always be stored at $[fp + ofs]$ for $fp$ a frame pointer (whose value can change during the program execution) and $ofs$ a small constant offset (a multiple of 8).
+
+To detect whether a location (register or memory cell) stores the value of $sp$, we take the list of values this location holds for each opcode. The basic idea is that many opcodes modify $sp$ in the same way : pop or push a few values. But we must be careful : we do not know whether $sp$ is stored as the address of the top stack cell, or as the index of the top stack cell, or something else. Depending on the case, a PUSH might increment $sp$ by $8$, $1$ or something else. The solution is to compute the alignment of $sp$, i.e. the largest power of $2$ that divides all the values in the list. We implement this idea as :
+\begin{itemize}
+	\item Compute the maximum consecutive number of times that $sp \leftarrow sp + k*align$ where $k$ is a small constant (e.g. $-2 \leq k \leq 2$). This number shouldn't change much with the size of the program (we check consecutive occurences) : we require it to be larger than a constant (e.g. $10$).
+	\item Compute the maximum (not necessarily consecutive) number of times that $sp \leftarrow sp - align$, i.e. the number of POPs. This number should be proportional to the size of the program : we check it is larger than a percentage of the total opcode count (e.g. $10\%$).
+\end{itemize}
+The second test used is to distinguish between $sp$ and $ip$/$fp$: $ip$ and $fp$ might be stored in a similar way as $sp$, and pass the first test. 
+
+\subsubsection{Code blocks}
+
+We compute the code blocks by partitioning the bytecode instructions according to (transitive closure of) the following relation. Two bytecode instructions are in the same code block if :
+\begin{itemize}
+	\item They are executed in the same frame (i.e. there is no frame change between two of their executions). This is because all instructions executed inside a frame are in the same Python function.
+	\item They are close in memory. This is because different code blocks are likely to be far apart in memory. % todo : why ?
+\end{itemize}
 
 
 
@@ -217,4 +246,5 @@ The term "pointer" is intentionally vague : a pointer could be stored in a physi
 
 
 \end{document}
+
 
