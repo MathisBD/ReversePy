@@ -59,15 +59,19 @@ public:
 class CFG
 {
 public:
+    CFG();
     CFG(const std::vector<Instruction*>& instructions, 
         const std::map<Jump, uint32_t>& jumps);
+    CFG* deepCopy(); 
     void mergeBlocks();
-    void writeDotGraph(FILE* file, uint32_t maxBBsize) const;
+    void resetDfsStates();
+    void writeDotGraph(FILE* file, uint32_t maxBBsize);
+    void dotDFS(FILE* file, uint32_t maxBBSize, BasicBlock* currBB);
     void checkIntegrity() const;
     std::vector<BasicBlock*> getBasicBlocks();
     void filterBBs(uint32_t bbFreqThreshold, uint32_t edgeFreqThreshold);
 private: 
     std::vector<BasicBlock*> bbVect;
-    void resetDfsStates();
     void mergeDFS(BasicBlock* bb);
+    void copyDFS(BasicBlock* bb);
 };

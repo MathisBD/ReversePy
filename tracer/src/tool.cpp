@@ -273,6 +273,16 @@ void insCallback(INS ins, void* v)
     }
 }
 
+bool isFetchBlock(BasicBlock* bb)
+{
+    for (auto instr : bb->instrs) {
+        if (trace.isFetch(instr->addr)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // called by PIN at the end of the program.
 // we can't write to stdout here since stdout might
 // have been closed (for PROG=ls at least).
@@ -283,6 +293,9 @@ void finiCallback(int code, void* v)
     trace.removeDeadInstrs();
     trace.buildCFG();
     
+    CFG* originalCFG = trace.cfg->deepCopy();
+    originalCFG->checkIntegrity();
+
     // find the fetch/dispatch (this modifies the cfg)
     findFetchDispatch(trace);
     printf("[+] Found dispatch at:\n\t0x%lx\n", trace.dispatch);
@@ -294,12 +307,32 @@ void finiCallback(int code, void* v)
         panic("the dispatch is also a fetch");
     }
     
-    dumpInstrList(trace, codeDumpFile);    
-    // write the CFG after it is modified by findFetchDispatch()
-    trace.cfg->writeDotGraph(cfgDotFile, 100);
-    fclose(cfgDotFile);
+    dumpInstrList(trace, codeDumpFile);
     dumpFetchDispatch(trace, fetchDispatchStream);
     dumpTraces(trace, traceDumpStream);
+
+    // write the CFG after it is modified by findFetchDispatch()
+    //trace.cfg->writeDotGraph(cfgDotFile, 100);
+    // write the cfg of the VM loop
+    fprintf(cfgDotFile, "digraph {\n");
+    fprintf(cfgDotFile, "\tnode[ shape=box ]\n");
+    trace.cfg->resetDfsStates();
+    for (auto bb : trace.cfg->getBasicBlocks()) {
+        if (bb->dfsState == DFS_UNVISITED && isFetchBlock(bb)) {
+           trace.cfg->dotDFS(cfgDotFile, 10, bb);
+        }
+    }
+    //originalCFG->filterBBs(10, 0);
+    originalCFG->mergeBlocks();
+    originalCFG->resetDfsStates();
+    for (auto bb : originalCFG->getBasicBlocks()) {
+        if (bb->dfsState == DFS_UNVISITED && isFetchBlock(bb)) {
+           originalCFG->dotDFS(cfgDotFile, 10, bb);
+        }
+    }
+    
+    fprintf(cfgDotFile, "}\n");
+    fclose(cfgDotFile);
 
     printf("[+] Done\n");
 

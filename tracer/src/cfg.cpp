@@ -30,6 +30,10 @@ uint64_t BasicBlock::firstAddr() const
     return instrs[0]->addr;
 }
 
+CFG::CFG()
+{
+}
+
 CFG::CFG(const std::vector<Instruction*>& instructions, 
     const std::map<Jump, uint32_t>& jumps)
 { 
@@ -118,33 +122,50 @@ void CFG::resetDfsStates()
 }
 
 
-void CFG::writeDotGraph(FILE* file, uint32_t maxBBSize) const
+void CFG::dotDFS(FILE* file, uint32_t maxBBSize, BasicBlock* currBB)
+{
+    currBB->dfsState = DFS_VISITED;
+
+    // use the bb struct address as a unique identifier
+    fprintf(file, "\t%lu[ label=\"", (uint64_t)currBB);
+    
+    uint32_t prevPrinted = 0;
+    for (uint32_t i = 0; i < currBB->instrs.size(); i++) {
+        if (i < (maxBBSize/2) || i >= currBB->instrs.size() - (maxBBSize/2)) {
+            if (i != prevPrinted + 1 && i > 0) {
+                fprintf(file, ".....\\l");
+            }
+            fprintf(file, "0x%lx\t(%u)\t%s\\l", currBB->instrs[i]->addr, 
+                currBB->instrs[i]->execCount, currBB->instrs[i]->disassembly.c_str());
+            prevPrinted = i;
+        }
+    }
+    fprintf(file, "\" ]\n");
+
+    for (auto edge : currBB->nextBBs) {
+        fprintf(file, "\t%lu -> %lu\n", (uint64_t)currBB, (uint64_t)(edge.bb));
+    }
+    
+    for (auto edge : currBB->nextBBs) {
+        if (edge.bb->dfsState == DFS_UNVISITED) {
+            dotDFS(file, maxBBSize, edge.bb);
+        }
+    }
+
+}
+
+void CFG::writeDotGraph(FILE* file, uint32_t maxBBSize)
 {
     // dotty crashes if node labels are too long (it detects a stack smashing - 
     // labels must be read into a stack allocated buffer without checking for size lol)
-
     fprintf(file, "digraph {\n");
     fprintf(file, "\tnode[ shape=box ]\n");
 
+    resetDfsStates();
+
     for (auto bb : bbVect) {
-        // use the bb struct address as a unique identifier
-        fprintf(file, "\t%lu[ label=\"", (uint64_t)bb);
-        
-        uint32_t prevPrinted = 0;
-        for (uint32_t i = 0; i < bb->instrs.size(); i++) {
-            if (i < (maxBBSize/2) || i >= bb->instrs.size() - (maxBBSize/2)) {
-                if (i != prevPrinted + 1 && i > 0) {
-                    fprintf(file, ".....\\l");
-                }
-                fprintf(file, "0x%lx\t(%u)\t%s\\l", bb->instrs[i]->addr, 
-                    bb->instrs[i]->execCount, bb->instrs[i]->disassembly.c_str());
-                prevPrinted = i;
-            }
-        }
-        fprintf(file, "\" ]\n");
-    
-        for (auto edge : bb->nextBBs) {
-            fprintf(file, "\t%lu -> %lu\n", (uint64_t)bb, (uint64_t)(edge.bb));
+        if (bb->dfsState == DFS_UNVISITED) {
+            dotDFS(file, maxBBSize, bb);
         }
     }
     fprintf(file, "}\n");
@@ -254,4 +275,35 @@ void CFG::filterBBs(uint32_t bbFreqThreshold, uint32_t edgeFreqThreshold)
             it++;
         }
     }
+}
+
+CFG* CFG::deepCopy()
+{
+    CFG* cfg = new CFG();
+    
+    std::map<uint64_t, uint32_t> bbPosition;
+    for (uint32_t i = 0; i < bbVect.size(); i++) {
+        bbPosition[bbVect[i]->firstAddr()] = i;
+    }
+    // copy the instrs
+    // make sure to copy the list of blocks in the same order.
+    for (auto bb : bbVect) {
+        BasicBlock* newBB = new BasicBlock();
+        newBB->instrs = bb->instrs;
+        cfg->bbVect.push_back(newBB);
+    }
+    // copy the edges 
+    for (uint32_t i = 0; i < bbVect.size(); i++) {
+        // forward edges
+        for (auto edge : bbVect[i]->nextBBs) {
+            auto newNextBB = cfg->bbVect[bbPosition[edge.bb->firstAddr()]];
+            cfg->bbVect[i]->nextBBs.push_back(Edge(edge.execCount, newNextBB));
+        }
+        // backward edges 
+        for (auto edge : bbVect[i]->prevBBs) {
+            auto newPrevBB = cfg->bbVect[bbPosition[edge.bb->firstAddr()]];
+            cfg->bbVect[i]->prevBBs.push_back(Edge(edge.execCount, newPrevBB));
+        }  
+    }
+    return cfg;
 }

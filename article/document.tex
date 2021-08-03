@@ -93,8 +93,7 @@ Intro : after context, tell how my work is different : shallow description of th
 \section{Introduction}
 This report accounts for the work done with Alexandre Talon and Guillaume Bonfante, during June and July of 2021 in the LORIA laboratory (Nancy). Over the course of these two months, I studied the problem of recognizing and describing virtual machines (VMs) from their execution traces.
 
-% Describe informally what a VM is
-A VM is an abstract version of a computer system : it is a program that reads a list of instructions (often called bytecode) and executes them. It's design is based on that of physical machines. The execution of an instruction consists in :
+A VM is an abstract version of a computer system : it is a program that reads a list of instructions (often called bytecode or opcodes) and executes them. It's design is based on that of physical machines. The execution of an instruction consists in :
 \begin{enumerate}
 	\item Fetch : read the instruction from memory.
 	\item Decode : parse the instruction. A typical format divides an instruction into an opcode followed by zero or more arguments (similar to machine code).
@@ -105,11 +104,11 @@ The serial execution of several instructions forms the VM loop.
 
 % Context + other papers
 
-An important class of virtual machines are programming languages interpreters, such as the Python interpreter (CPython) and the Java Virtual Machine (JVM). During this internship I focussed on different two Python VMs : CPython (the standard python interpreter) and PyPy. 
+An important class of virtual machines are programming language interpreters, such as the Python interpreter (CPython) or the Java Virtual Machine (JVM). During this internship I focussed on two Python VMs : CPython (the standard python interpreter) and PyPy. 
 
 % How my approach is different
 
-% Describe structure of report :
+% Describe structure of article :
 % 1. finding the fetch/dispatch
 % 2. finding the VM state
 % 3. semantic actions of opcodes
@@ -167,7 +166,7 @@ We look for a basic block that has the following properties :
 	\item It has a large number of outgoing edges (the dispatch).
 \end{itemize} 
 
-Unfortunately, this method is too restrictive: the fetch-decode-dispatch aren't always in the same basic block. There can be branches (e.g. to check for a termination condition) between the fetch and the dispatch, as shown in (ref to unfiltered cfg image). To handle this issue, we assume the fetch-decode-dispatch are in the same basic block in the CFG after we have filtered out some irrelevant details. 
+Unfortunately, this method is too restrictive: the fetch-decode-dispatch aren't always in the same basic block. There can be branches (e.g. to check for a termination condition) between the fetch and the dispatch, as shown in (ref to unfiltered cfg image). To handle this issue, we first filter out irrelevant detail, and then hope that the fetch-decode-dispatch are in the same basic block in the modified CFG. 
 
 The way we filter the CFG is by removing basic blocks and edges that aren't executed a significant number of times. This way we only retain the main structure of the graph, abstracting away the less often taken branches. However we might remove some or most of the bytecode execution code from the graph (we only retain the opcodes executed a lot of times) (maybe image comparing filtered and unfiltered ?): the unfiltered CFG is a good place to look for the dispatch, and the filtered CFG is the place to look for the fetch-decode-dispatch block. 
 
@@ -179,6 +178,7 @@ We thus look for a basic block in the filtered CFG that has the following proper
 \end{itemize}
 
 Once we have found the fetch, it is easy to find the bytecode : we simply get the value read by the fetch. We can also divide the trace into chunks corresponding to each bytecode, and remove the irrelevant parts of the VM trace (initialization and finalization code) : we obtain a list of small traces for each bytecode.
+
 
 \section{Abstract VM model}
 
@@ -236,7 +236,6 @@ We compute the code blocks by partitioning the bytecode instructions according t
 	\item They are executed in the same frame (i.e. there is no frame change between two of their executions). This is because all instructions executed inside a frame are in the same Python function.
 	\item They are close in memory. This is because different code blocks are likely to be far apart in memory. % todo : why ?
 \end{itemize}
-
 
 
 \section{Opcode semantics}

@@ -30,7 +30,7 @@ std::set<uint64_t> getSmallReadInstrs(const Trace& trace, uint32_t maxReadSize)
 
 void findFetchDispatch(Trace& trace)
 {
-    uint32_t dispatchMinExecCount = 2000;
+    uint32_t dispatchMinExecCount = 1000;
     uint32_t dispatchMinOutEdges = 10;
     uint32_t dispatchMaxReadSize = 2;
     // get basic metrics
@@ -56,15 +56,11 @@ void findFetchDispatch(Trace& trace)
         if (reads.empty()) {
             continue;
         }
-        //printf("block at 0x%lx\n", bb->firstAddr());
         for (const Instruction* instr : bb->instrs) {
-            //printf("0x%lx\tout=%u\texec=%u\n", instr->addr, 
-            //    outEdges[instr->addr], instr->execCount);
             if (outEdges[instr->addr] >= dispatchMinOutEdges &&
                 instr->execCount >= dispatchMinExecCount) 
             {
                 // we found the dispatch ! (and the fetches)  
-                //printf("Found dispatch at 0x%lx\n", instr->addr);          
                 potentialDispatch.push_back(instr->addr);
                 potentialFetches.push_back(reads);                
             }
