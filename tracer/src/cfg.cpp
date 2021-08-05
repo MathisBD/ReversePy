@@ -121,7 +121,17 @@ void CFG::resetDfsStates()
     }
 }
 
+std::string firstWord(const std::string& str)
+{
+    size_t i = str.find(' ');
+    if (i == std::string::npos) {
+        return str;
+    }
+    return str.substr(0, i);
+}
 
+// dotty crashes if node labels are too long (it detects a stack smashing - 
+// labels must be read into a stack allocated buffer without checking for size lol)
 void CFG::dotDFS(FILE* file, uint32_t maxBBSize, BasicBlock* currBB)
 {
     currBB->dfsState = DFS_VISITED;
@@ -135,8 +145,9 @@ void CFG::dotDFS(FILE* file, uint32_t maxBBSize, BasicBlock* currBB)
             if (i != prevPrinted + 1 && i > 0) {
                 fprintf(file, ".....\\l");
             }
-            fprintf(file, "0x%lx\t(%u)\t%s\\l", currBB->instrs[i]->addr, 
-                currBB->instrs[i]->execCount, currBB->instrs[i]->disassembly.c_str());
+            //fprintf(file, "0x%lx\t(%u)\t%s\\l", currBB->instrs[i]->addr, 
+            //    currBB->instrs[i]->execCount, currBB->instrs[i]->disassembly.c_str());
+            fprintf(file, "%s\\l", currBB->instrs[i]->disassembly.c_str());
             prevPrinted = i;
         }
     }
@@ -154,20 +165,15 @@ void CFG::dotDFS(FILE* file, uint32_t maxBBSize, BasicBlock* currBB)
 
 }
 
-void CFG::writeDotGraph(FILE* file, uint32_t maxBBSize)
+void CFG::writeDotHeader(FILE* file)
 {
-    // dotty crashes if node labels are too long (it detects a stack smashing - 
-    // labels must be read into a stack allocated buffer without checking for size lol)
     fprintf(file, "digraph {\n");
+    fprintf(file, "\tconcentrate=true\n");
     fprintf(file, "\tnode[ shape=box ]\n");
+}
 
-    resetDfsStates();
-
-    for (auto bb : bbVect) {
-        if (bb->dfsState == DFS_UNVISITED) {
-            dotDFS(file, maxBBSize, bb);
-        }
-    }
+void CFG::writeDotFooter(FILE* file) 
+{
     fprintf(file, "}\n");
 }
 

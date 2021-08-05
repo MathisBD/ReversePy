@@ -5,6 +5,7 @@
 #include <fstream>
 #include <sstream>
 #include <set>
+#include <iostream>
 
 #include "mem.h"
 #include "errors.h"
@@ -16,7 +17,7 @@
 
 KNOB< std::string > outputFolderKnob(KNOB_MODE_WRITEONCE, "pintool", "o", "output", "specify output folder name");
 static FILE* codeDumpFile;
-static FILE* cfgDotFile;
+static std::vector<FILE*> cfgDotFiles;
 static FILE* imgFile;
 static FILE* bytecodeFile;
 static std::fstream fetchDispatchStream;
@@ -283,6 +284,18 @@ bool isFetchBlock(BasicBlock* bb)
     return false;
 }
 
+void dumpVMLoop(CFG* cfg, FILE* file, uint32_t maxBBSize)
+{
+    cfg->writeDotHeader(file);
+    cfg->resetDfsStates();
+    for (auto bb : cfg->getBasicBlocks()) {
+        if (bb->dfsState == DFS_UNVISITED && isFetchBlock(bb)) {
+           cfg->dotDFS(file, maxBBSize, bb);
+        }
+    }
+    cfg->writeDotFooter(file);
+}
+
 // called by PIN at the end of the program.
 // we can't write to stdout here since stdout might
 // have been closed (for PROG=ls at least).
@@ -314,32 +327,19 @@ void finiCallback(int code, void* v)
     // write the CFG after it is modified by findFetchDispatch()
     //trace.cfg->writeDotGraph(cfgDotFile, 100);
     // write the cfg of the VM loop
-    fprintf(cfgDotFile, "digraph {\n");
-    fprintf(cfgDotFile, "\tnode[ shape=box ]\n");
-    trace.cfg->resetDfsStates();
-    for (auto bb : trace.cfg->getBasicBlocks()) {
-        if (bb->dfsState == DFS_UNVISITED && isFetchBlock(bb)) {
-           trace.cfg->dotDFS(cfgDotFile, 10, bb);
-        }
-    }
+    dumpVMLoop(trace.cfg, cfgDotFiles[0], 20);
     //originalCFG->filterBBs(10, 0);
     originalCFG->mergeBlocks();
-    originalCFG->resetDfsStates();
-    for (auto bb : originalCFG->getBasicBlocks()) {
-        if (bb->dfsState == DFS_UNVISITED && isFetchBlock(bb)) {
-           originalCFG->dotDFS(cfgDotFile, 10, bb);
-        }
-    }
+    dumpVMLoop(originalCFG, cfgDotFiles[1], 0);
     
-    fprintf(cfgDotFile, "}\n");
-    fclose(cfgDotFile);
-
     printf("[+] Done\n");
 
     // close the log files
+    for (auto file : cfgDotFiles) {
+        fclose(file);
+    }
     fclose(codeDumpFile);
     fclose(imgFile);
-    fclose(cfgDotFile);
     fclose(bytecodeFile);
     traceDumpStream.close();
     fetchDispatchStream.close();
@@ -391,7 +391,6 @@ int main(int argc, char* argv[])
         printf("[+] You are not running a python program\n");
         progRunning = true;
     }
-    
 
     // open the log files
     std::string outputFolder = outputFolderKnob.Value();
@@ -400,7 +399,11 @@ int main(int argc, char* argv[])
     }
     codeDumpFile = fopen((outputFolder + "code_dump").c_str(), "w");
     imgFile = fopen((outputFolder + "img_loading").c_str(), "w");
-    cfgDotFile = fopen((outputFolder + "cfg.dot").c_str(), "w");
+    for (size_t i = 0; i < 2; i++) {
+        std::stringstream s;
+        s << outputFolder << "cfg" << i << ".dot";
+        cfgDotFiles.push_back(fopen(s.str().c_str(), "w"));
+    }
     bytecodeFile = fopen((outputFolder + "bytecode").c_str(), "w");
     traceDumpStream.open((outputFolder + "traceDump").c_str(), std::ios::out);
     fetchDispatchStream.open((outputFolder + "fetch_dispatch").c_str(), std::ios::out);

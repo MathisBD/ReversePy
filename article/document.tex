@@ -9,7 +9,14 @@
 \usepackage{tikz}
 \usetikzlibrary{shapes.multipart}
 \usetikzlibrary{arrows.meta}
+\usepackage{caption}
+\usepackage{subcaption}
 
+\usepackage[%  
+	colorlinks=true,
+	pdfborder={0 0 0},
+	linkcolor=red
+]{hyperref}
 
 
 \iffalse
@@ -100,7 +107,7 @@ A VM is an abstract version of a computer system : it is a program that reads a 
 	\item Dispatch : based on the opcode, decide which code (or function) to run.
 	\item Execute : carry through the semantics of the instruction. This is where the VM's internal state is updated and input/output operations are performed.
 \end{enumerate}
-The serial execution of several instructions forms the VM loop.
+The serial execution of several instructions forms the VM loop (see Figure \ref{fig:abstractVM:Centralized}).
 
 % Context + other papers
 
@@ -117,9 +124,9 @@ An important class of virtual machines are programming language interpreters, su
 
 We will now describe in more detail our starting point. We give ourselves a VM to analyze (for instance the CPython interpreter). We assume that we do not have access to the source code or to the machine code of the VM executable. What we do allow ourselves to use is the execution trace of single runs of the VM : the ordered list of machine instructions the VM executable uses to run a given program. Note that this does not give us access to the complete machine code of the VM executable, nor to the bytecode instructions of the program the VM runs. We obtain this execution trace using a custom Intel PIN tracer.
 
-The first step to analyzing the VM is thus to recognize it in the execution trace : can we recognize the fetch-decode-dispatch-execute pattern ?
+The first step to analyzing the VM is thus to recognize it in the execution trace : can we recognize the fetch-decode-dispatch-execute pattern ? In what follows we will often write 'finding the fetch' to avoid repeating 'fetch-decode-dispatch'.
 
-\subsection{Building a CFG}
+\subsection{Building the CFG}
 
 We start by building the control flow graph (CFG) from the VM trace. We group instructions by basic blocks : a sequence of instructions that has only one entry point and one exit point, and build a graph whose vertices are basic blocks and whose edges indicate branches taken during the execution.
 
@@ -127,57 +134,100 @@ More precisely : for an machine instruction $I$, we call $next(I)$ (resp. $prev(
 
 We then build a graph on the basic blocks. We add an edge from a block $(I_k)_{k \in [1,n]}$ to a block $(J_k)_{k \in [1, m]}$ if and only if $J_1 \in next(I_n)$, which is equivalent to $I_n \in prev(J_1)$.
 
-As the size and complexity of CFGs built this way grows very fast, we apply some additional rules to simplify the graph. Each time we see a $call$ instruction, 
+As the size and complexity of CFGs built this way grows very fast, we apply some additional transformations to simplify the graph. Each time we see a $call$ instruction, we find the corresponding $ret$ instruction, and delete and add edges as shown in Figure \ref{fig:callRet}. As a consequence of this transformation, the CFG is split into several connected components, each corresponding to a single function (this is the convention adopted by the binary analysis framework IDA).
 
-
-
-\begin{figure}[H]
-	
+\begin{figure}[htp]
 	\centering
-	\begin{tikzpicture}[every text node part/.style={align=left},
-	bb/.style={draw,rectangle,thick,minimum width=2cm,align=left}]
+	\begin{subfigure}{.5\textwidth}
+		\centering 	
+		\includegraphics[width=.4\linewidth]{img/CallRetBefore.png}
+		\caption{Original CFG}
+	\end{subfigure}%
+	\begin{subfigure}{.5\textwidth}
+		\centering 	
+		\includegraphics[width=.4\linewidth]{img/CallRetAfter.png}
+		\caption{Transformed CFG}
+	\end{subfigure}
 	
-	%[->, scale=0.9, transform shape, thick,bb/.style={draw,box,thick, inner sep=0pt,minimum size=5mm}]
-	
-	\node (call) at (0,0) [bb] {...\\call};
-	\node (ret) at (2,-2) [bb] {...\\ret};
-	\node (fallthrough) at (0,-4) [bb] {...};
-	
-	\draw [-{Stealth[scale=2]}] (call) -> (ret);
-	\draw [-{Stealth[scale=2]}] (ret) -> (fallthrough);
-	
-	\end{tikzpicture}
-	
-	\caption{Caption}
-	\label{label}
+	\caption{Transformation of the CFG around call/ret}
+	\label{fig:callRet}
 \end{figure}
  
+\subsection{Finding the fetch}
 
+\subsubsection{Basic Method}
 
-\subsection{Finding fetch and dispatch}
+The basic idea to find the fetch is to assume that all opcodes share the same basic block for the fetch, as in Figure \ref{fig:abstractVM:Centralized}.
+Note that this is a somewhat restrictive assumption, albeit necessary for this method to work. Some VM implementations use a fetch block for each different opcode (see Figure \ref{fig:abstractVM:Decentralized}) : most notably CPython does so. This optimization ('computed-gotos') can thankfully be disabled when compiling CPython. In all my experiments I used this modified CPython version.
+% todo : reference the CPython source file that implements computed gotos ?
 
-The basic idea to find the fetch, decode and dispatch is to assume that all bytecodes share the same machine instructions for the fetch-decode-dispatch, as in (ref to cfg image, with filtered blocks). 
-Note that this is a somewhat restrictive assumption, albeit necessary for this method to work. Some VM implementations duplicate the fetch-decode-dispatch code for each different bytecode (see other cfg image) : most notably CPython does so. This optimization ("computed-gotos") can thankfully be disabled when compiling CPython. In all my experiments I used this modified CPython version.
+\begin{figure}[htp]
+	\centering
+	\begin{subfigure}{.5\textwidth}
+		\centering 	
+		\includegraphics[width=.7\linewidth]{img/FetchCentralized.png}
+		\caption{Centralized fetch}
+		\label{fig:abstractVM:Centralized}
+	\end{subfigure}%
+	\begin{subfigure}{.5\textwidth}
+		\centering 	
+		\includegraphics[width=.7\linewidth]{img/FetchDecentralized.png}
+		\caption{Decentralized fetch ('computed-gotos')}
+		\label{fig:abstractVM:Decentralized}
+	\end{subfigure}
+	\caption{Examples of VM control flow graphs}
+	\label{fig:abstractVM}
+\end{figure}
 
-We look for a basic block that has the following properties :
+We thus build the CFG $\mathcal{C}$ and look for a basic block that :
 \begin{itemize}
-	\item It is executed a large number of times (because it is shared between all bytecodes).
-	\item It contains at least one instruction that reads a few bytes from memory (the fetch).
-	\item It has a large number of outgoing edges (the dispatch).
+	\item is executed a large number of times (because it is shared between all opcodes).
+	\item contains at least one instruction that reads a few bytes from memory (the fetch).
+	\item has a large number of outgoing edges (the dispatch).
 \end{itemize} 
 
-Unfortunately, this method is too restrictive: the fetch-decode-dispatch aren't always in the same basic block. There can be branches (e.g. to check for a termination condition) between the fetch and the dispatch, as shown in (ref to unfiltered cfg image). To handle this issue, we first filter out irrelevant detail, and then hope that the fetch-decode-dispatch are in the same basic block in the modified CFG. 
+Unfortunately, this method is too restrictive: the fetch, decode and dispatch aren't always in the same basic block in $\mathcal{C}$. There can be branches (e.g. to check for a termination condition, etc.) between the fetch and the dispatch, as shown in (ref to unfiltered cfg image). 
 
-The way we filter the CFG is by removing basic blocks and edges that aren't executed a significant number of times. This way we only retain the main structure of the graph, abstracting away the less often taken branches. However we might remove some or most of the bytecode execution code from the graph (we only retain the opcodes executed a lot of times) (maybe image comparing filtered and unfiltered ?): the unfiltered CFG is a good place to look for the dispatch, and the filtered CFG is the place to look for the fetch-decode-dispatch block. 
+\subsubsection{Using the filtered CFG}
 
-We thus look for a basic block in the filtered CFG that has the following properties :
+To handle this issue, we first filter out irrelevant detail from $\mathcal{C}$, and then hope that the fetch-decode-dispatch are in the same basic block in the new CFG $\mathcal{C}_{filtered}$. 
+
+Given two parameters $exec\_blocks$ and $exec\_edges$, we build $\mathcal{C}_{filtered}$ as follows : 
 \begin{itemize}
-	\item It is executed a large number of times.
-	\item It contains at least one instruction that reads a few bytes from memory.
-	\item The corresponding block in the unfiltered CFG has a large number of outgoing edges.
+	\item For each block $B \in \mathcal{C}$, if $B$ is executed at least $exec\_blocks$ times, add $B$ to $\mathcal{C}_{filtered}$.
+	\item For each edges $(E: B \rightarrow B') \in \mathcal{C}$, if $E$ is executed at least $exec\_edges$ times and both $B$ and $B'$ are executed at least $exec\_blocks$ times, add $E$ to $\mathcal{C}_{filtered}$.
+\end{itemize}
+We then apply a simple transformation on $\mathcal{C}_{filtered}$ to merge all blocks $B$ and $B'$ such that $next(B) = \{B'\}$ and $prev(B') = \{B\}$. During my experiments I had to tune the values of $exec\_blocks$ and $exec\_edges$, and found values around $1000$ to give satisfactory results. This method thus only works on Python programs that contain at least a few thousand opcodes.
+
+The CFG $\mathcal{C}_{filtered}$ only retains the main structure of the graph, abstracting away the code paths rarely taken. However we might remove some or most of the opcode execution code from the graph (we only retain the opcodes executed a lot of times) (maybe image comparing filtered and unfiltered ?): $\mathcal{C}$ is a good place to look for the dispatch, and $\mathcal{C}_{filtered}$ is the place to look for the fetch-decode-dispatch basic block. 
+
+We thus look for a basic block in $\mathcal{C}_{filtered}$ that :
+\begin{itemize}
+	\item is executed a large number of times.
+	\item contains at least one instruction that reads a few bytes from memory (the fetch).
+	\item contains at least one instruction that has a large number of outgoing edges in $\mathcal{C}$.
 \end{itemize}
 
 Once we have found the fetch, it is easy to find the bytecode : we simply get the value read by the fetch. We can also divide the trace into chunks corresponding to each bytecode, and remove the irrelevant parts of the VM trace (initialization and finalization code) : we obtain a list of small traces for each bytecode.
+
+\begin{figure}[htp]
+	\centering
+	\begin{subfigure}{.5\textwidth}
+		\centering 	
+		\includegraphics[width=.7\linewidth]{img/ConcreteVMFiltered.png}
+		\caption{The relevant part of $\mathcal{C}_{filtered}$}
+		\label{fig:concreteVM:Filtered}
+	\end{subfigure}%
+	\begin{subfigure}{.5\textwidth}
+		\centering 	
+		\includegraphics[width=.7\linewidth]{img/ConcreteVMOriginal.png}
+		\caption{The relevant part of $\mathcal{C}$}
+		\label{fig:concreteVM:Original}
+	\end{subfigure}
+	% todo : rephrase + add a reference to the python program (prog.py)
+	\caption{VM control flow graphs for a trace using CPython}
+	\label{fig:concreteVM}
+\end{figure}
 
 
 \section{Abstract VM model}
