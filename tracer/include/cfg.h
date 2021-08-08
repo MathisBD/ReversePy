@@ -73,7 +73,8 @@ public:
     
     void writeDotHeader(FILE* file);
     void writeDotFooter(FILE* file);
-    void dotDFS(FILE* file, uint32_t maxBBSize, BasicBlock* currBB);
+    void dotDFS(FILE* file, uint32_t maxBBSize, BasicBlock* currBB, 
+        const std::vector<uint64_t>& v);
 private: 
     std::vector<BasicBlock*> bbVect;
     void mergeDFS(BasicBlock* bb);

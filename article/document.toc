@@ -9,8 +9,10 @@
 \contentsline {subsection}{\numberline {3.1}Definition}{5}{subsection.3.1}%
 \contentsline {subsection}{\numberline {3.2}Finding pointers}{5}{subsection.3.2}%
 \contentsline {subsubsection}{\numberline {3.2.1}Finding $ip$}{5}{subsubsection.3.2.1}%
-\contentsline {subsubsection}{\numberline {3.2.2}Finding $fp$}{5}{subsubsection.3.2.2}%
-\contentsline {subsubsection}{\numberline {3.2.3}Finding $sp$}{6}{subsubsection.3.2.3}%
-\contentsline {subsubsection}{\numberline {3.2.4}Code blocks}{6}{subsubsection.3.2.4}%
-\contentsline {section}{\numberline {4}Opcode semantics}{6}{section.4}%
-\contentsline {section}{\numberline {5}Experimental setup \& conclusion}{6}{section.5}%
+\contentsline {subsubsection}{\numberline {3.2.2}Finding $fp$}{7}{subsubsection.3.2.2}%
+\contentsline {subsubsection}{\numberline {3.2.3}Finding $sp$}{7}{subsubsection.3.2.3}%
+\contentsline {subsubsection}{\numberline {3.2.4}Code blocks}{8}{subsubsection.3.2.4}%
+\contentsline {section}{\numberline {4}Opcode semantics}{8}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Examples \& Challenges}{8}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Definition}{9}{subsection.4.2}%
+\contentsline {section}{\numberline {5}Experimental setup \& conclusion}{10}{section.5}%

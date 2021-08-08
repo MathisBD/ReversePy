@@ -11,6 +11,8 @@
 \usetikzlibrary{arrows.meta}
 \usepackage{caption}
 \usepackage{subcaption}
+\usepackage{fancyvrb}
+
 
 \usepackage[%  
 	colorlinks=true,
@@ -88,14 +90,15 @@ Intro : after context, tell how my work is different : shallow description of th
 \fi 
 
 \begin{document}
-	\title{L3 internship: Shallow description of the Python Virtual Machine}
-	\author{Mathis Bouverot-Dupuis}
-	\date{June \& July 2021}
 	
-	\maketitle 
-	
-	\tableofcontents
-	\newpage
+\title{L3 internship: Shallow description of the Python Virtual Machine}
+\author{Mathis Bouverot-Dupuis}
+\date{June \& July 2021}
+
+\maketitle 
+
+\tableofcontents
+\newpage
 
 \section{Introduction}
 This report accounts for the work done with Alexandre Talon and Guillaume Bonfante, during June and July of 2021 in the LORIA laboratory (Nancy). Over the course of these two months, I studied the problem of recognizing and describing virtual machines (VMs) from their execution traces.
@@ -199,7 +202,7 @@ Given two parameters $exec\_blocks$ and $exec\_edges$, we build $\mathcal{C}_{fi
 \end{itemize}
 We then apply a simple transformation on $\mathcal{C}_{filtered}$ to merge all blocks $B$ and $B'$ such that $next(B) = \{B'\}$ and $prev(B') = \{B\}$. During my experiments I had to tune the values of $exec\_blocks$ and $exec\_edges$, and found values around $1000$ to give satisfactory results. This method thus only works on Python programs that contain at least a few thousand opcodes.
 
-The CFG $\mathcal{C}_{filtered}$ only retains the main structure of the graph, abstracting away the code paths rarely taken. However we might remove some or most of the opcode execution code from the graph (we only retain the opcodes executed a lot of times) (maybe image comparing filtered and unfiltered ?): $\mathcal{C}$ is a good place to look for the dispatch, and $\mathcal{C}_{filtered}$ is the place to look for the fetch-decode-dispatch basic block. 
+The CFG $\mathcal{C}_{filtered}$ only retains the main structure of the graph, abstracting away the code paths rarely taken. However we might remove some or most of the opcode execution code from the graph : see figures \ref{fig:concreteVMFiltered} and \ref{fig:concreteVMOriginal} for a comparison between $\mathcal{C}$ and $\mathcal{C}_{filtered}$. The original CFG $\mathcal{C}$ is a good place to look for the dispatch, and $\mathcal{C}_{filtered}$ is the place to look for the fetch-decode-dispatch basic block. 
 
 We thus look for a basic block in $\mathcal{C}_{filtered}$ that :
 \begin{itemize}
@@ -211,24 +214,29 @@ We thus look for a basic block in $\mathcal{C}_{filtered}$ that :
 Once we have found the fetch, it is easy to find the bytecode : we simply get the value read by the fetch. We can also divide the trace into chunks corresponding to each bytecode, and remove the irrelevant parts of the VM trace (initialization and finalization code) : we obtain a list of small traces for each bytecode.
 
 \begin{figure}[htp]
-	\centering
-	\begin{subfigure}{.5\textwidth}
-		\centering 	
-		\includegraphics[width=.7\linewidth]{img/ConcreteVMFiltered.png}
-		\caption{The relevant part of $\mathcal{C}_{filtered}$}
-		\label{fig:concreteVM:Filtered}
-	\end{subfigure}%
-	\begin{subfigure}{.5\textwidth}
-		\centering 	
-		\includegraphics[width=.7\linewidth]{img/ConcreteVMOriginal.png}
-		\caption{The relevant part of $\mathcal{C}$}
-		\label{fig:concreteVM:Original}
-	\end{subfigure}
-	% todo : rephrase + add a reference to the python program (prog.py)
-	\caption{VM control flow graphs for a trace using CPython}
-	\label{fig:concreteVM}
+	\centering 
+	\begin{BVerbatim}
+f = open("file", "w")
+for i in range(1000):
+	f.write(str(i))
+	\end{BVerbatim}
+	\caption{An example python program, used to generate the graphs in Figures 	\ref{fig:concreteVMFiltered} and \ref{fig:concreteVMOriginal}.}
+	\label{fig:examplePythonProg}
 \end{figure}
 
+\begin{figure}[htp]
+	\centering 	
+	\includegraphics[width=\linewidth]{img/ConcreteVMFiltered.png}
+	\caption{The function implementing the VM loop in $\mathcal{C}_{filtered}$, constructed from a trace of CPython running the program in Figure \ref{fig:examplePythonProg}. Notice how the fetch (movzxw (\%r12), \%edx)) and the dispatch (jmp \%rax) are in the same block (the top-most block), and that this block has relatively few outgoing edges.}
+	\label{fig:concreteVMFiltered}
+\end{figure}
+
+\begin{figure}[htp]
+	\centering 	
+	\includegraphics[width=\linewidth]{img/ConcreteVMOriginal.png}
+	\caption{The function implementing the VM loop in $\mathcal{C}$, constructed from the same trace as in Figure \ref{fig:concreteVMFiltered}. Only the blocks implementing the fetch and the dispatch have their code shown. Notice how the fetch and the dispatch are in different blocks, and that the dispatch has many outgoing edges.}
+	\label{fig:concreteVMOriginal}
+\end{figure}
 
 \section{Abstract VM model}
 
@@ -281,7 +289,7 @@ The second test used is to distinguish between $sp$ and $ip$/$fp$: $ip$ and $fp$
 
 \subsubsection{Code blocks}
 
-We compute the code blocks by partitioning the bytecode instructions according to (transitive closure of) the following relation. Two bytecode instructions are in the same code block if :
+We compute the code blocks by partitioning the bytecode instructions according to (the transitive closure of) the following relation. Two bytecode instructions are in the same code block if :
 \begin{itemize}
 	\item They are executed in the same frame (i.e. there is no frame change between two of their executions). This is because all instructions executed inside a frame are in the same Python function.
 	\item They are close in memory. This is because different code blocks are likely to be far apart in memory. % todo : why ?
@@ -289,6 +297,47 @@ We compute the code blocks by partitioning the bytecode instructions according t
 
 
 \section{Opcode semantics}
+
+\subsection{Examples \& Challenges}
+
+Once we have the values of $ip$ and $sp$ for each opcode, we try to attribute semantics to each opcode, i.e. characterize how they change the values of $ip$ and $sp$. One limitation of our 'shallow' description is that we do not known what values are stored on the stack : typical Python interpreters use the stack to store pointers to objects which we do not know the memory layout of. We thus can't differentiate between an ADD and a MUL operation for instance. All we can detect is the number of push/pops each opcode performs and how it changes the value of $ip$.
+
+We would like to build semantics of the following form, e.g. for the simple case of an ADD opcode :
+\begin{itemize}
+	\item $ip \leftarrow ip + 2$
+	\item $sp \leftarrow sp - 8$
+\end{itemize}
+Meaning that when we execute an ADD, $ip$ always increases by $2$ and $sp$ always decreases by $8$ (ADD pops its two arguments, pushes the result and advances to the next instruction). Remember that Python instructions are $2$ bytes long, so $ip + 2$ is the instruction directly following $ip$. However $sp$ can be the address of the top of the stack (in which case $sp - 8$ is the value directly under $sp$, since stack values are $8$ byte pointers) or can be something else, e.g. an index. In this case $sp$ will be aligned on $1$ rather than on $8$, and ADD would have the following semantics :
+\begin{itemize}
+	\item $ip \leftarrow ip + 2$
+	\item $sp \leftarrow sp - 1$
+\end{itemize}
+Likewise, one could imagine a Python interpreter that grows the stack towards the bottom (CPython and PyPy both grow the stack towards the top), in which case it could become $sp \leftarrow sp + 1$. The precise semantics of an opcode thus depend on the particular interpreter we choose.
+
+Another characteristic of our approach is that a single execution trace often doesn't give us enough information to find the most general semantics for an opcode. Take for example a conditional jump instruction such as POP\_JUMP\_IF\_TRUE, which performs a jump if the top of the stack is $true$ and otherwise advances to the next instruction. In a trace where each time we see this opcode the top of the stack is $false$, we can't detect that this is a conditional jump (or even a jump) and must give it the semantic $ip <- ip + 2$. We thus compute the most precise semantics for a given execution trace. 
+
+Note that for a given opcode, several semantics may be acceptable. For instance the ADD opcode always has an argument equal to $0$ : thus we could characterize it by $ip \leftarrow ip + 2$ as well as by $ip \leftarrow ip + arg + 2$. In the second case we would interpret it as a relative jump, which it obviously isn't. I thus made the choice to only give the most 'general' characterization (in a sense I will define later on) for each opcode : ADD would thus be classified as $ip \leftarrow ip + 2$.
+
+\subsection{Definition}
+
+Building the $ip$-related semantics of an opcode is relatively straightforward. Most opcodes never change the current frame. For these, we five one of the following characterizations :
+\begin{enumerate}
+	\item Fall-through: $ip \leftarrow ip + k$. This corresponds to opcodes that don't alter the flow of control of the program.
+	\item Relative jump : $ip \leftarrow ip + arg + k$.
+	\item Absolute jump : $ip \leftarrow \textrm{block-start} + arg + k$.
+	\item Conditional jump : $\textrm{either } ip \leftarrow ip + k_1 \textrm{ or } ip \leftarrow \textrm{block-start} + arg + k_2$. Note that we cannot find what the condition is, since this would require inspecting values in the stack.
+\end{enumerate}
+Here $k$, $k_1$ and $k_2$ are small constants (typically $-2 \leq k \leq 2$), $arg$ is the value of the argument of the opcode, and 'block-start' is the address of the first instruction in the current code block. 
+The different characterizations are listed (top to bottom) from the most 'general' to the most precise : for each opcode, we give it the most 'general' characterization that is acceptable.
+
+We didn't manage to find much about instructions that jump between frames, for lack of proper frame identification (we only know when frames change, not what frame we are in). We thus didn't characterize CALL or RET instructions. One additional difficulty is that CALL-like Python instructions don't always correspond to a change of frame. They are sometimes handled internally by the interpreter (e.g. calls to internal libraries such as I/O functions) : the next opcode in the trace is thus the fall-through instruction, and no frame change has been made.
+
+Building the $sp$-related semantics is similar. Again, dealing with opcodes that change the current frame is too difficult, but for those that never change it, we give one of the following characterizations (from the most general to the least) :
+\begin{enumerate}
+	\item $sp \leftarrow sp + k$. This corresponds to most simple pop/push opcodes, as well as most binary operations (ADD, SUB, MUL, \dots).
+	\item $sp \leftarrow sp \pm A*arg + k$. This corresponds to opcodes that either consume a number of values given by $arg$ (e.g. BUILD\_TUPLE) or produce a number of values given by $arg$ (e.g. UNPACK\_SEQUENCE).
+\end{enumerate}
+Here $k$ is a small constant (typically $-2 \leq k \leq 2$), $arg$ is the value of the argument of the opcode, and $A$ is the alignment of $sp$ (typically $1$ or $8$).
 
 
 \section{Experimental setup \& conclusion}

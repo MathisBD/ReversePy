@@ -274,10 +274,10 @@ void insCallback(INS ins, void* v)
     }
 }
 
-bool isFetchBlock(BasicBlock* bb)
+bool isFetchDispatchBlock(BasicBlock* bb)
 {
     for (auto instr : bb->instrs) {
-        if (trace.isFetch(instr->addr)) {
+        if (trace.isFetch(instr->addr) || instr->addr == trace.dispatch) {
             return true;
         }
     }
@@ -289,8 +289,10 @@ void dumpVMLoop(CFG* cfg, FILE* file, uint32_t maxBBSize)
     cfg->writeDotHeader(file);
     cfg->resetDfsStates();
     for (auto bb : cfg->getBasicBlocks()) {
-        if (bb->dfsState == DFS_UNVISITED && isFetchBlock(bb)) {
-           cfg->dotDFS(file, maxBBSize, bb);
+        if (bb->dfsState == DFS_UNVISITED && isFetchDispatchBlock(bb)) {
+            std::vector<uint64_t> v = trace.fetches;
+            v.push_back(trace.dispatch);
+            cfg->dotDFS(file, maxBBSize, bb, v);
         }
     }
     cfg->writeDotFooter(file);
@@ -325,7 +327,6 @@ void finiCallback(int code, void* v)
     dumpTraces(trace, traceDumpStream);
 
     // write the CFG after it is modified by findFetchDispatch()
-    //trace.cfg->writeDotGraph(cfgDotFile, 100);
     // write the cfg of the VM loop
     dumpVMLoop(trace.cfg, cfgDotFiles[0], 20);
     //originalCFG->filterBBs(10, 0);

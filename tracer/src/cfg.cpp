@@ -130,11 +130,30 @@ std::string firstWord(const std::string& str)
     return str.substr(0, i);
 }
 
+bool contains(const std::vector<uint64_t>& vect, uint64_t x)
+{
+    for (uint64_t y : vect) {
+        if (x == y) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // dotty crashes if node labels are too long (it detects a stack smashing - 
 // labels must be read into a stack allocated buffer without checking for size lol)
-void CFG::dotDFS(FILE* file, uint32_t maxBBSize, BasicBlock* currBB)
+void CFG::dotDFS(FILE* file, uint32_t maxBBSize_, BasicBlock* currBB,
+    const std::vector<uint64_t>& v)
 {
     currBB->dfsState = DFS_VISITED;
+
+    uint32_t maxBBSize = maxBBSize_;
+    for (auto instr : currBB->instrs) {
+        if (contains(v, instr->addr)) {
+            maxBBSize = 1000;
+            break;
+        }
+    }
 
     // use the bb struct address as a unique identifier
     fprintf(file, "\t%lu[ label=\"", (uint64_t)currBB);
@@ -159,7 +178,7 @@ void CFG::dotDFS(FILE* file, uint32_t maxBBSize, BasicBlock* currBB)
     
     for (auto edge : currBB->nextBBs) {
         if (edge.bb->dfsState == DFS_UNVISITED) {
-            dotDFS(file, maxBBSize, edge.bb);
+            dotDFS(file, maxBBSize_, edge.bb, v);
         }
     }
 
