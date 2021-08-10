@@ -1,6 +1,6 @@
 digraph {
 	concentrate=true
-	node[ shape=box ]
+	node[ shape=box, fontsize=20 ]
 	140253279775408[ label="movl  0x32f86e(%rip), %r10d\lmov %r12, %rsi\lsubq  0x8(%rsp), %rsi\lmovl  %esi, 0x68(%rbx)\lmov %esi, %edx\ltest %r10d, %r10d\ljz 0x558547177744\lmovzxw  (%r12), %edx\ladd $0x2, %r12\lmovzx %dl, %r13d\lmovzx %dh, %edx\l" ]
 	140253279775408 -> 140253279775328
 	140253279775328[ label="cmp $0xa3, %r13d\ljnbe 0x558547177e38\lleaq  0x22caa8(%rip), %rcx\lmov %r13d, %eax\lmovsxdl  (%rcx,%rax,4), %rax\ladd %rcx, %rax\ljmp %rax\l" ]

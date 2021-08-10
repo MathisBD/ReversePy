@@ -1,4 +1,4 @@
-\documentclass[french]{article}
+\documentclass[english]{article}
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
 \usepackage{lmodern}
@@ -22,71 +22,11 @@
 
 
 \iffalse
-
-S'inspirer du papier des Bardins.
-
-Détailler un peu la démarche.
-
-Intro : after context, tell how my work is different : shallow description of the VM (using only the execution trace)
-
-1. Recognizing the VM execution
-	-> cfg : (with some pictures)
-		-> how I chose to build the cfg
-		-> aside : cpython's computed gotos
-	-> extracting traces for each opcode (pin tool)
-		-> what is a trace precisely (where do we break it) ?
-		-> maybe an example for a really short trace (e.g. I think jump_absolute is ~20 lines) : highlight fetch/dispatch/opcode
-		
-2. Abstract VM model -> at the start of the article : describe informally a VM
-	-> stack VM (no registers)
-	-> stack : contiguous 8byte cells, pointer to the top of stack
-	-> code block : contiguous 2byte cells, opc + arg, instr pointer
-	-> frame : contains a code block + stack, frame pointer
-	
-3. extracting the VM state/recognizing the VM model (pointers, instr blocks, frame changes) -> merge with 2., and 
-	-> list the characteristics of each pointer (we look at register values between opcodes, i.e. just before the fetch instruction)
-		ip :
-			alignment >= 0x2
-			more than a few distinct values
-			never overwritten (explain)
-			max instr streak (explain, give offsets) >= a little number
-		sp :
-			alignment >= 0x8
-			more than a few distinct values
-			is overwritten at least a few times
-			max stack streak (explain, give offsets) >= a little number
-				-> explain why we exclude 0 from the offsets (to distinguish sp and fp)
-	-> enough for sp, not for ip : 
-		heuristic : 
-			-> sp gives us the frame changes (look for big sp changes) 
-			-> code block changes at most frame changes (except recursive function calls) 
-			-> we expect big ip jumps at frame changes
-	-> fp : we expect it to change at frame changes
-		-> we find 2 that change *exactly* at the same time as sp : one is esp
-	-> method for finding code blocks
-		-> put instrs in the same block if :
-			either close in memory
-			or executed one after the other without a frame change
-			
-4. 'shallow' semantics of opcodes
-	-> what kind of semantics do we want ? 
-		-> only look at VM state between opcodes : don't look at the asm trace (implementation) of each opcode
-		-> variations of sp :
-			sp <- sp + cste 
-			sp <- sp - 8*arg + cste (arg tells how many values to 'eat' on the stack)
-		-> variations of ip :
-			ip <- ip + cste (go to next instr)
-			ip <- ip + arg + cste (relative jump)
-			ip <- code-block-start + arg + cste (absolute jump)
-			ip <- either absolute jump or next instr (conditional jump)
-		-> we require cste to be small (a few stack/code cells at most)
-		
 5. experimental setup 
 	-> link to github
 	-> version of pin & python, a word on the centralized fetch compile option, say how it breaks with different python versions (e.g. libpython on Alexandre's machine) 
 	-> IMPORTANT (maybe ?) : code might break on big-endian machines (e.g. when encoding/decoding json values)
 	-> brief description of the code organization -> maybe add a readme in the github repo instead ?
-	
 \fi 
 
 \begin{document}
@@ -113,19 +53,21 @@ A VM is an abstract version of a computer system : it is a program that reads a 
 The serial execution of several instructions forms the VM loop (see Figure \ref{fig:abstractVM:Centralized}).
 
 % Context + other papers
+During this internship our goal was broadly speaking to reverse engineer a VM : we would observe the execution of a VM and first try to detect that it is a VM, then try to find out what it is doing. Similar work has been done in the context of binary deobfuscation : a popular technique to hide the original source code of a program (i.e. obfuscate it) is to translate parts of it into some proprietary bytecode to be interpreted at run-time by a virtual machine. This protection can however be bypassed, as shown by Salwan, Bardin and Potet in \cite{tritondeobfs} in which they used the Triton dynamic binary instrumentation framework along with the powerful techniques it enables such as taint analysis and symbolic execution to find the original source code (or an equivalent code) of obfuscated programs. Unlike traditional 'by hand' reverse-engineering techniques, which first try to understand the proprietary bytecode before finding the source code, they leveraged Triton to find the source code without having to find much about the VM. 
 
-An important class of virtual machines are programming language interpreters, such as the Python interpreter (CPython) or the Java Virtual Machine (JVM). During this internship I focussed on two Python VMs : CPython (the standard python interpreter) and PyPy. 
+I studied a specific class of VMs : programming language interpreters. Typical examples include the Python interpreter or the Java Virtual Machine. I focused on two Python interpreters : CPython \cite{cpython} and PyPy \cite{pypy}. My approach was more lightweight than that of Salwan \& co. Without using heavy techniques and only using the fact that the Python interpreter is a VM, my goal was to :
+\begin{enumerate}
+	\item Find the bytecode of the program being run.
+	\item Find some level of semantics about the bytecode.
+\end{enumerate}
 
-% How my approach is different
-
-% Describe structure of article :
-% 1. finding the fetch/dispatch
-% 2. finding the VM state
-% 3. semantic actions of opcodes
+The first step was to analyze the trace of an execution of a Python interpreter to find the VM loop. Then I had to find the main parts of the VM state such as the program bytecode, the instruction pointer ($ip$), the stack pointer ($sp$), etc. Finally I computed some basic semantics for the Python opcodes.
 
 \section{Recognizing the VM execution}
 
-We will now describe in more detail our starting point. We give ourselves a VM to analyze (for instance the CPython interpreter). We assume that we do not have access to the source code or to the machine code of the VM executable. What we do allow ourselves to use is the execution trace of single runs of the VM : the ordered list of machine instructions the VM executable uses to run a given program. Note that this does not give us access to the complete machine code of the VM executable, nor to the bytecode instructions of the program the VM runs. We obtain this execution trace using a custom Intel PIN tracer.
+We will now describe in more detail our starting point. We give ourselves a VM to analyze (for instance the CPython interpreter). We assume that we do not have access to the source code or to the machine code of the VM executable. What we do allow ourselves to use is the execution trace of single runs of the VM : the ordered list of machine instructions the VM executable uses to run a given program. Note that this does not give us access to the complete machine code of the VM executable, nor to the bytecode instructions of the program the VM runs. 
+
+I obtained this execution trace using a custom Intel Pin tracer \cite{intelpin}. Writing the Pintool was a non-trivial task : I had to balance several challenges such as memory consumption (we have to store information about every noteworthy machine instruction that is executed, which can quickly add up to gigabytes of data), execution time (running a program instrumented with Pin is several orders of magnitudes slower than without) and unclear parts of the Pin user guide.
 
 The first step to analyzing the VM is thus to recognize it in the execution trace : can we recognize the fetch-decode-dispatch-execute pattern ? In what follows we will often write 'finding the fetch' to avoid repeating 'fetch-decode-dispatch'.
 
@@ -261,13 +203,13 @@ The term "pointer" is intentionally vague : a pointer could be stored in a physi
 
 We will write $ptr \leftarrow f(ptr)$ where $f$ is any function and $ptr$ is $ip$, $sp$ or $fp$ to indicate that a given opcode changes the value of $ptr$ to $f(ptr)$.
 
-\subsection{Finding pointers}
+\subsection{Finding the VM state}
 
-We assume the state of the VM is valid at the fetch (and at the dispatch). At other points in the execution trace, the registers and memory cells used to store the VM pointers may be used for different purposes. Our goal is then to find the most information we can about the VM state before each bytecode.
+We assume the state of the VM is valid at the fetch/dispatch block. At other points in the execution trace, the registers and memory cells used to store the VM state may be used for different purposes. Our goal is then to find the most information we can about the state before each bytecode.
 
 \subsubsection{Finding $ip$}
 
-Our method for finding the fetch gives us the instruction(s) that read the bytecode, and thus the address of the bytecode in memory : this gives us the value of $ip$ before each opcode.
+Our method for finding the fetch gives us the instruction(s) that read the bytecode, and thus the address of the bytecode in memory : this gives us the value of $ip$ before each opcode, and also gives us access to the actual bytecode being executed (the value that is read by the fetch).
 
 \subsubsection{Finding $fp$}
 
@@ -340,9 +282,111 @@ Building the $sp$-related semantics is similar. Again, dealing with opcodes that
 Here $k$ is a small constant (typically $-2 \leq k \leq 2$), $arg$ is the value of the argument of the opcode, and $A$ is the alignment of $sp$ (typically $1$ or $8$).
 
 
-\section{Experimental setup \& conclusion}
+\begin{figure}[htp]
+	\centering
+	\begin{tabular}{|c|c|c|}
+		\hline
+		POP\_TOP & $ip \leftarrow ip + 2$ & $sp \leftarrow sp - 8$\\
+		\hline
+		MAKE\_FUNCTION & $ip \leftarrow ip + 2$ & $sp \leftarrow sp - 8$\\
+		\hline
+		BUILD\_SLICE & $ip \leftarrow ip + 2$ & $sp \leftarrow sp - 8$\\
+		\hline
+		DUP\_TOP & $ip \leftarrow ip + 2$ & $sp \leftarrow sp + 8$\\
+		\hline
+		ROT\_TWO & $ip \leftarrow ip + 2$ & $sp \leftarrow sp + 0$\\
+		\hline
+		UNARY\_NEGATIVE & $ip \leftarrow ip + 2$ & $sp \leftarrow sp + 0$\\
+		\hline
+		CALL\_FUNCTION\_KW & $ip \leftarrow ip + 2$ & $sp \leftarrow sp - 8*arg - 8$\\
+		\hline
+		EXTENDED\_ARG & $ip \leftarrow ip + 4$ & \\
+		\hline
+		BINARY\_MULTIPLY & $ip \leftarrow ip + 2$ & $sp \leftarrow sp - 8$\\
+		\hline
+		BINARY\_MODULO & $ip \leftarrow ip + 2$ & $sp \leftarrow sp - 8$\\
+		\hline
+		BINARY\_ADD & $ip \leftarrow ip + 2$ & $sp \leftarrow sp - 8$\\
+		\hline
+		BINARY\_SUBTRACT & $ip \leftarrow ip + 2$ & $sp \leftarrow sp - 8$\\
+		\hline
+		BINARY\_SUBSCR & $ip \leftarrow ip + 2$ & $sp \leftarrow sp - 8$\\
+		\hline
+		FORMAT\_VALUE & $ip \leftarrow ip + 2$ & $sp \leftarrow sp + 0$\\
+		\hline
+		BUILD\_STRING & $ip \leftarrow ip + 2$ & $sp \leftarrow sp - 8$\\
+		\hline
+		LOAD\_METHOD & $ip \leftarrow ip + 2$ & $sp \leftarrow sp + 8$\\
+		\hline
+		INPLACE\_ADD & $ip \leftarrow ip + 2$ & $sp \leftarrow sp - 8$\\
+		\hline
+		BINARY\_AND & $ip \leftarrow ip + 2$ & $sp \leftarrow sp - 8$\\
+		\hline
+		GET\_ITER & $ip \leftarrow ip + 4$ & $sp \leftarrow sp + 8$\\
+		\hline
+		LOAD\_BUILD\_CLASS & $ip \leftarrow ip + 2$ & $sp \leftarrow sp + 8$\\
+		\hline
+		POP\_BLOCK & $ip \leftarrow ip + 2$ & $sp \leftarrow sp + 0$\\
+		\hline
+		STORE\_NAME & $ip \leftarrow ip + 2$ & $sp \leftarrow sp - 8$\\
+		\hline
+		STORE\_ATTR & $ip \leftarrow ip + 2$ & $sp \leftarrow sp - 16$\\
+		\hline
+		LOAD\_CONST & $ip \leftarrow ip + 2$ & $sp \leftarrow sp + 8$\\
+		\hline
+		LOAD\_NAME & $ip \leftarrow ip + 2$ & $sp \leftarrow sp + 8$\\
+		\hline
+		BUILD\_TUPLE & $ip \leftarrow ip + 2$ & $sp \leftarrow sp - 8$\\
+		\hline
+		LOAD\_ATTR & $ip \leftarrow ip + 2$ & $sp \leftarrow sp + 0$\\
+		\hline
+		JUMP\_FORWARD & $ip \leftarrow ip + arg + 2$ & $sp \leftarrow sp + 0$\\
+		\hline
+		JUMP\_ABSOLUTE & $ip \leftarrow \textrm{ block-start } + arg + 0$ & $sp \leftarrow sp + 0$\\
+		\hline
+		POP\_JUMP\_IF\_FALSE & $ip \leftarrow \textrm{ block-start } + arg + 0$ & $sp \leftarrow sp - 8$\\
+		\hline
+		POP\_JUMP\_IF\_TRUE & 
+		$ip \leftarrow 
+		\left\{ 
+		\begin{array}{ll}
+		ip + 2 \\ 
+		\textrm{block-start } + arg + 0
+		\end{array}
+		\right.$ & $sp \leftarrow sp - 8$\\
+		\hline
+		LOAD\_GLOBAL & $ip \leftarrow ip + 2$ & $sp \leftarrow sp + 8$\\
+		\hline
+		SETUP\_FINALLY & $ip \leftarrow ip + 2$ & $sp \leftarrow sp + 0$\\
+		\hline
+		LOAD\_FAST & $ip \leftarrow ip + 2$ & $sp \leftarrow sp + 8$\\
+		\hline
+		STORE\_FAST & $ip \leftarrow ip + 2$ & $sp \leftarrow sp - 8$\\
+		\hline
+	\end{tabular}
+	\caption{Examples of opcode characterizations obtained with CPython.}
+	\label{fig:}
+\end{figure}
 
 
+
+\begin{thebibliography}{9}
+	\bibitem{tritondeobfs} 
+	Jonathan Salwan, Sébastien Bardin and Marie-Laure Potet (2017).
+	\\\textit{Désobfuscation binaire: Reconstruction de fonctions virtualisées}
+	
+	\bibitem{cpython}
+	CPython : the official Python interpreter.
+	\href{https://docs.python.org/3/}{\\\texttt{https://docs.python.org/3/}}
+	
+	\bibitem{pypy}
+	PyPy : a Python interpreter written in Python.
+	\href{https://doc.pypy.org/en/latest/}{\\\texttt{https://doc.pypy.org/en/latest/}}
+	
+	\bibitem{intelpin}
+	Intel Pin : A Dynamic Binary Instrumentation Tool.
+	\href{https://software.intel.com/content/www/us/en/develop/articles/pin-a-dynamic-binary-instrumentation-tool.html}{\\\texttt{https://software.intel.com/content/www/us/en/develop/articles/\\pin-a-dynamic-binary-instrumentation-tool.html}}
+\end{thebibliography}
 \end{document}
 
 

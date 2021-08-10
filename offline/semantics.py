@@ -39,8 +39,9 @@ class Semantics:
         self.opcodes = set(op.opc for op in ti.py_ops)
         # maps opcode -> list of state diffs
         self.diffs = defaultdict(lambda: [])
-        # maps opcode -> list of compatible actions
-        self.actions = defaultdict(lambda: [])
+        # maps opcode -> semantic action or None
+        self.ip_action = dict()
+        self.sp_action = dict()
         # the maximum absolute value of the offset in jump actions
         self.MAX_JUMP_OFS = 2 * ti.ip_align
         # same but for sp actions
@@ -77,20 +78,20 @@ class Semantics:
         for meth in methods:
             act = meth(self.diffs[opc])
             if act is not None:
-                self.actions[opc].append(act)
-                return
+                return act 
+        return None 
 
     def compute_actions(self):
         for opc in self.opcodes:
             # jumps (order matters)
-            self.first_action(opc, [
+            self.ip_action[opc] = self.first_action(opc, [
                 self.jmp_rel,
                 self.jmp_rel_arg,
                 self.jmp_abs,
                 self.jmp_cond
             ])  
             # stack offset (order matters)
-            self.first_action(opc, [
+            self.sp_action[opc] = self.first_action(opc, [
                 self.sp_ofs,
                 self.sp_ofs_plus_arg,
                 self.sp_ofs_minus_arg
@@ -281,6 +282,32 @@ def get_opc_name_table():
     else:
         raise Exception("unknown opcodes version : %s" % version)
 
+def escape_latex(s):
+    esc = ""
+    i = 0
+    while i < len(s):
+        if s[i] == '_':
+            esc += "\\_"
+            i += 1          
+        else:
+            esc += s[i]
+            i += 1 
+    return esc
+
+def print_latex_actions(sem):
+    for opc in sem.opcodes:
+        ip_act = sem.ip_action[opc]
+        sp_act = sem.sp_action[opc]
+        if ip_act is None and sp_act is None:
+            continue
+        print("\\hline")
+        print("%s & %s & %s\\\\" % (
+            escape_latex(opc_name[opc]), 
+            ip_act.latex() if ip_act is not None else "",
+            sp_act.latex() if sp_act is not None else ""
+        ))
+    print("\\hline")
+   
 if __name__ == "__main__":
     opc_name = get_opc_name_table()
     # The trace file has one trace per line.
@@ -321,14 +348,10 @@ if __name__ == "__main__":
     print("[+] Semantic actions for each opcode")
     sem = Semantics(ti)
     sem.compute_diffs()
-    
     sem.compute_actions()
-    for opc, actions in sem.actions.items():
-        count = len(set(d.ip for d in sem.diffs[opc]))
-        print("\t%s (observed at %d locations):" % (opc_name[opc], count))
-        for act in actions:
-            print("\t\t%s" % act)
-    
+
+    # print the actions in latex table form
+    print_latex_actions(sem)
     
     print("[+] Instr blocks:")
     for i, bl in enumerate(ti.blocks):
