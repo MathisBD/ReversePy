@@ -19,5 +19,5 @@ def view_pyc_file(path):
 
 
 if __name__ == '__main__':
-    #view_pyc_file(sys.argv[1])
-    view_py_opcodes(sys.argv[1])
+    view_pyc_file(sys.argv[1])
+    #view_py_opcodes(sys.argv[1])

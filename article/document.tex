@@ -104,7 +104,6 @@ As the size and complexity of CFGs built this way grows very fast, we apply some
 
 The basic idea to find the fetch is to assume that all opcodes share the same basic block for the fetch, as in Figure \ref{fig:abstractVM:Centralized}.
 Note that this is a somewhat restrictive assumption, albeit necessary for this method to work. Some VM implementations use a fetch block for each different opcode (see Figure \ref{fig:abstractVM:Decentralized}) : most notably CPython does so. This optimization ('computed-gotos') can thankfully be disabled when compiling CPython. In all my experiments I used this modified CPython version.
-% todo : reference the CPython source file that implements computed gotos ?
 
 \begin{figure}[htp]
 	\centering
@@ -157,12 +156,45 @@ Once we have found the fetch, it is easy to find the bytecode : we simply get th
 
 \begin{figure}[htp]
 	\centering 
-	\begin{BVerbatim}
+	\begin{subfigure}{.5\textwidth}
+		\centering 	
+		\begin{BVerbatim}
 f = open("file", "w")
 for i in range(1000):
-	f.write(str(i))
-	\end{BVerbatim}
-	\caption{An example python program, used to generate the graphs in Figures 	\ref{fig:concreteVMFiltered} and \ref{fig:concreteVMOriginal}.}
+f.write(str(i))
+		\end{BVerbatim}
+		\caption{Python source code.}
+		\label{fig:examplePythonProg:source}
+	\end{subfigure}%
+	\begin{subfigure}{.5\textwidth}
+		\centering 	
+		\begin{BVerbatim}
+LOAD_NAME                0 (open)
+LOAD_CONST               0 ('file')
+LOAD_CONST               1 ('w')
+CALL_FUNCTION            2
+STORE_NAME               1 (f)
+LOAD_NAME                2 (range)
+LOAD_CONST               2 (1000)
+CALL_FUNCTION            1
+GET_ITER
+FOR_ITER                18 (to 38)
+STORE_NAME               3 (i)
+LOAD_NAME                1 (f)
+LOAD_METHOD              4 (write)
+LOAD_NAME                5 (str)
+LOAD_NAME                3 (i)
+CALL_FUNCTION            1
+CALL_METHOD              1
+POP_TOP
+JUMP_ABSOLUTE           18
+LOAD_CONST               3 (None)
+RETURN_VALUE
+		\end{BVerbatim}
+		\caption{Disassembled bytecode.}
+		\label{fig:examplePythonProg:bytecode}
+	\end{subfigure}
+	\caption{An example python program, used to generate the graphs in Figures 	\ref{fig:concreteVMFiltered} and \ref{fig:concreteVMOriginal}, along with its disassembly as given by the Python 'dis' module.}
 	\label{fig:examplePythonProg}
 \end{figure}
 
@@ -215,8 +247,7 @@ Our method for finding the fetch gives us the instruction(s) that read the bytec
 
 To find the frame pointers, we must make another assumption : that the C stack of the interpreter corresponds to the stack of the Python program it is running (remember we only look at the program state between bytecodes). Changes in $\%rsp$ should then give us the points at which the frame changes. Looking at registers that also change exactly and only at the same time as $\%rsp$ (and are also aligned on 8 bits) gives us additional frame pointers : pointers to some frame data (for instance, a C struct on the heap).
 
-% todo : expand on this
-Knowing the values of the frame pointers, we then tried to recognize the stack structure of frames, but some opcodes seem to operate on the stack of frame in non-standard ways : i.e. other than push or pop one, a even several, frame(s).
+Knowing the values of the frame pointers, we then tried to recognize the stack structure of frames, but some opcodes seem to operate on the frame stack in non-standard ways, i.e. other than push or pop (one or several) frames. This was a limitation that prevented us from working much with opcodes that deal with frames, such as CALLs and RET, as will be explained later on.
 
 \subsubsection{Finding $sp$}
 
@@ -240,7 +271,7 @@ We compute the code blocks by partitioning the bytecode instructions according t
 
 \section{Opcode semantics}
 
-\subsection{Examples \& Challenges}
+\subsection{Examples}
 
 Once we have the values of $ip$ and $sp$ for each opcode, we try to attribute semantics to each opcode, i.e. characterize how they change the values of $ip$ and $sp$. One limitation of our 'shallow' description is that we do not known what values are stored on the stack : typical Python interpreters use the stack to store pointers to objects which we do not know the memory layout of. We thus can't differentiate between an ADD and a MUL operation for instance. All we can detect is the number of push/pops each opcode performs and how it changes the value of $ip$.
 
@@ -272,7 +303,7 @@ Building the $ip$-related semantics of an opcode is relatively straightforward. 
 Here $k$, $k_1$ and $k_2$ are small constants (typically $-2 \leq k \leq 2$), $arg$ is the value of the argument of the opcode, and 'block-start' is the address of the first instruction in the current code block. 
 The different characterizations are listed (top to bottom) from the most 'general' to the most precise : for each opcode, we give it the most 'general' characterization that is acceptable.
 
-We didn't manage to find much about instructions that jump between frames, for lack of proper frame identification (we only know when frames change, not what frame we are in). We thus didn't characterize CALL or RET instructions. One additional difficulty is that CALL-like Python instructions don't always correspond to a change of frame. They are sometimes handled internally by the interpreter (e.g. calls to internal libraries such as I/O functions) : the next opcode in the trace is thus the fall-through instruction, and no frame change has been made.
+We didn't manage to find much about instructions that jump between frames, for lack of proper frame identification (we only know when frames change, not what frame we are in). We thus didn't characterize CALL or RET instructions. One additional difficulty is that CALL-like Python instructions don't always correspond to a change of frame. They are sometimes (but not always) handled internally by the interpreter (e.g. calls to internal libraries such as I/O functions) : the next opcode in the trace is thus the fall-through instruction, and no frame change has been made.
 
 Building the $sp$-related semantics is similar. Again, dealing with opcodes that change the current frame is too difficult, but for those that never change it, we give one of the following characterizations (from the most general to the least) :
 \begin{enumerate}
@@ -281,6 +312,7 @@ Building the $sp$-related semantics is similar. Again, dealing with opcodes that
 \end{enumerate}
 Here $k$ is a small constant (typically $-2 \leq k \leq 2$), $arg$ is the value of the argument of the opcode, and $A$ is the alignment of $sp$ (typically $1$ or $8$).
 
+An exemple of the semantics we are able to compute is given in Figure \ref{fig:semanticsTable}. Notice that this table contains more distinct opcodes than the Python program it was built from (Figure \ref{fig:examplePythonProg}) : this is because interpreters execute some initialization and finalization bytecode before and after the program's bytecode. Conversely, some opcodes in the python program don't appear in the table or have an incomplete characterization (e.g. EXTENDED\_ARGS) : our simple model does not allow us to give a characterization for all opcodes, and most notably for opcodes that change the frame (e.g. CALL\_FUNCTION and RET). Another interesting opcode is POP\_JUMP\_IF\_FALSE : we would expect it to be classified as a conditional jump. However every time this opcode was executed, the same branch was taken, and our model thus classifies it as an absolute jump.
 
 \begin{figure}[htp]
 	\centering
@@ -288,25 +320,13 @@ Here $k$ is a small constant (typically $-2 \leq k \leq 2$), $arg$ is the value 
 		\hline
 		POP\_TOP & $ip \leftarrow ip + 2$ & $sp \leftarrow sp - 8$\\
 		\hline
-		MAKE\_FUNCTION & $ip \leftarrow ip + 2$ & $sp \leftarrow sp - 8$\\
-		\hline
 		BUILD\_SLICE & $ip \leftarrow ip + 2$ & $sp \leftarrow sp - 8$\\
-		\hline
-		DUP\_TOP & $ip \leftarrow ip + 2$ & $sp \leftarrow sp + 8$\\
-		\hline
-		ROT\_TWO & $ip \leftarrow ip + 2$ & $sp \leftarrow sp + 0$\\
 		\hline
 		UNARY\_NEGATIVE & $ip \leftarrow ip + 2$ & $sp \leftarrow sp + 0$\\
 		\hline
 		CALL\_FUNCTION\_KW & $ip \leftarrow ip + 2$ & $sp \leftarrow sp - 8*arg - 8$\\
 		\hline
 		EXTENDED\_ARG & $ip \leftarrow ip + 4$ & \\
-		\hline
-		BINARY\_MULTIPLY & $ip \leftarrow ip + 2$ & $sp \leftarrow sp - 8$\\
-		\hline
-		BINARY\_MODULO & $ip \leftarrow ip + 2$ & $sp \leftarrow sp - 8$\\
-		\hline
-		BINARY\_ADD & $ip \leftarrow ip + 2$ & $sp \leftarrow sp - 8$\\
 		\hline
 		BINARY\_SUBTRACT & $ip \leftarrow ip + 2$ & $sp \leftarrow sp - 8$\\
 		\hline
@@ -318,13 +338,11 @@ Here $k$ is a small constant (typically $-2 \leq k \leq 2$), $arg$ is the value 
 		\hline
 		LOAD\_METHOD & $ip \leftarrow ip + 2$ & $sp \leftarrow sp + 8$\\
 		\hline
-		INPLACE\_ADD & $ip \leftarrow ip + 2$ & $sp \leftarrow sp - 8$\\
+		CALL\_METHOD & $ip \leftarrow ip + 2$ & $sp \leftarrow sp - 8*arg - 8$\\
 		\hline
 		BINARY\_AND & $ip \leftarrow ip + 2$ & $sp \leftarrow sp - 8$\\
 		\hline
 		GET\_ITER & $ip \leftarrow ip + 4$ & $sp \leftarrow sp + 8$\\
-		\hline
-		LOAD\_BUILD\_CLASS & $ip \leftarrow ip + 2$ & $sp \leftarrow sp + 8$\\
 		\hline
 		POP\_BLOCK & $ip \leftarrow ip + 2$ & $sp \leftarrow sp + 0$\\
 		\hline
@@ -335,8 +353,6 @@ Here $k$ is a small constant (typically $-2 \leq k \leq 2$), $arg$ is the value 
 		LOAD\_CONST & $ip \leftarrow ip + 2$ & $sp \leftarrow sp + 8$\\
 		\hline
 		LOAD\_NAME & $ip \leftarrow ip + 2$ & $sp \leftarrow sp + 8$\\
-		\hline
-		BUILD\_TUPLE & $ip \leftarrow ip + 2$ & $sp \leftarrow sp - 8$\\
 		\hline
 		LOAD\_ATTR & $ip \leftarrow ip + 2$ & $sp \leftarrow sp + 0$\\
 		\hline
@@ -364,8 +380,8 @@ Here $k$ is a small constant (typically $-2 \leq k \leq 2$), $arg$ is the value 
 		STORE\_FAST & $ip \leftarrow ip + 2$ & $sp \leftarrow sp - 8$\\
 		\hline
 	\end{tabular}
-	\caption{Examples of opcode characterizations obtained with CPython.}
-	\label{fig:}
+	\caption{The list of opcode characterizations obtained with CPython for the program in Figure \ref{fig:examplePythonProg}.}
+	\label{fig:semanticsTable}
 \end{figure}
 
 
@@ -384,7 +400,7 @@ Here $k$ is a small constant (typically $-2 \leq k \leq 2$), $arg$ is the value 
 	\href{https://doc.pypy.org/en/latest/}{\\\texttt{https://doc.pypy.org/en/latest/}}
 	
 	\bibitem{intelpin}
-	Intel Pin : A Dynamic Binary Instrumentation Tool.
+	Intel Pin : a Dynamic Binary Instrumentation Tool.
 	\href{https://software.intel.com/content/www/us/en/develop/articles/pin-a-dynamic-binary-instrumentation-tool.html}{\\\texttt{https://software.intel.com/content/www/us/en/develop/articles/\\pin-a-dynamic-binary-instrumentation-tool.html}}
 \end{thebibliography}
 \end{document}
