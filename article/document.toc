@@ -1,12 +1,12 @@
 \babel@toc {english}{}\relax 
 \contentsline {section}{\numberline {1}Introduction}{3}{section.1}%
-\contentsline {section}{\numberline {2}Recognizing the VM execution}{3}{section.2}%
+\contentsline {section}{\numberline {2}Recognizing the VM execution}{4}{section.2}%
 \contentsline {subsection}{\numberline {2.1}Building the CFG}{4}{subsection.2.1}%
-\contentsline {subsection}{\numberline {2.2}Finding the fetch}{4}{subsection.2.2}%
-\contentsline {subsubsection}{\numberline {2.2.1}Basic Method}{4}{subsubsection.2.2.1}%
-\contentsline {subsubsection}{\numberline {2.2.2}Using the filtered CFG}{6}{subsubsection.2.2.2}%
-\contentsline {section}{\numberline {3}Abstract VM model}{6}{section.3}%
-\contentsline {subsection}{\numberline {3.1}Definition}{6}{subsection.3.1}%
+\contentsline {subsection}{\numberline {2.2}Finding the fetch}{5}{subsection.2.2}%
+\contentsline {subsubsection}{\numberline {2.2.1}Basic Method}{5}{subsubsection.2.2.1}%
+\contentsline {subsubsection}{\numberline {2.2.2}Using the filtered CFG}{5}{subsubsection.2.2.2}%
+\contentsline {section}{\numberline {3}Abstract VM model}{7}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Definition}{7}{subsection.3.1}%
 \contentsline {subsection}{\numberline {3.2}Finding the VM state}{10}{subsection.3.2}%
 \contentsline {subsubsection}{\numberline {3.2.1}Finding $ip$}{10}{subsubsection.3.2.1}%
 \contentsline {subsubsection}{\numberline {3.2.2}Finding $fp$}{10}{subsubsection.3.2.2}%

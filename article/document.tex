@@ -46,6 +46,14 @@
 \section{Introduction}
 This report accounts for the work done under the supervision of Alexandre Talon and Guillaume Bonfante, during June and July of 2021 in the LORIA laboratory (Nancy). Over the course of these two months, I studied the problem of recognizing and describing virtual machines (VMs) from their execution traces.
 
+The context of this study relies on the following issue.We suppose that we are given an executable for which we mustdetermine whether it is a malware or not. The problem is thatmalware authors try to hide their malware by transforming the code, to make it harder to understand and analyze. Evenif we have the original version of the malware, it is hard (and in general undecidable by Rice's Theorem) to recognize its obfuscated variants.
+
+One of the obfuscation techniques used by malware authors isto compile their binary code with a virtual machine,see \cite{surreptsoft}.
+
+A virtual machine is given by a (usually low level) language (next named bytecode) together with its semantics,usually described by an interpreter for the language. The basis of theobfuscation is then to compile the malware's source code to the bytecode language andto embark both the interpreter and the obfuscated code within the malware executable.
+
+Some packers such as VMProtect (see \cite{vmprotect}) will perform such an operation.
+
 A VM is an abstract version of a computer system: it is a program that reads a list of instructions (in a format called bytecode) and executes them. Its design is based on that of physical machines. The execution of an instruction consists of the following steps:
 \begin{enumerate}
 	\item Fetch: reads the instruction from memory.
@@ -82,7 +90,9 @@ More precisely: for a machine instruction $I$, we call $next(I)$ (resp. $prev(I)
 
 We then build a graph on the basic blocks. We add an edge from a block $I_1 \dots I_n$ to a block $J_1 \dots J_p$ if and only if $J_1 \in next(I_n)$, which is equivalent to $I_n \in prev(J_1)$.
 
-As the size and complexity of CFGs built this way grow very fast, we apply some additional transformations to simplify the graph. Each time we see a $call$ instruction, we find the corresponding $ret$ instruction, and delete and add edges as shown in Figure \ref{fig:callRet}. As a consequence of this transformation, the CFG is split into several connected components, each corresponding to a single function (this is the convention adopted by the binary analysis framework IDA).
+As the size and complexity of CFGs built this way grow very fast, we apply some additional transformations to simplify the graph. Each time we see a \texttt{call} instruction, we find the corresponding \texttt{ret} instruction, and delete and add edges as shown in Figure \ref{fig:callRet}. This transformation requires that all \texttt{call} instructions have a matching \texttt{ret} instruction. This is not always the case with malware: programs can use call stack tampering and (ab)use \texttt{call} instructions for other purposes. However I believe this is not a fundamental limitation of this approach : with more effort and time this method could probably be adapted to work even with call stack tampering.
+
+As a consequence of this transformation, the CFG is split into several connected components, each corresponding to a single function (this is the convention adopted by the binary analysis framework IDA).
 
 \begin{figure}[htp]
 	\centering
@@ -144,7 +154,7 @@ When building $\mathcal{C}_{filtered}$, we want to remove blocks that are execut
 	\item For each block $B \in \mathcal{C}$, if $B$ is executed at least $exec\_blocks$ times, add $B$ to $\mathcal{C}_{filtered}$.
 	\item For each edge $(E: B \rightarrow B') \in \mathcal{C}$, if $E$ is executed at least $exec\_edges$ times and both $B$ and $B'$ are executed at least $exec\_blocks$ times, add $E$ to $\mathcal{C}_{filtered}$.
 \end{itemize}
-We then apply a simple transformation on $\mathcal{C}_{filtered}$ to merge all blocks $B$ and $B'$ such that $next(B) = \{B'\}$ and $prev(B') = \{B\}$. In the experiments I had to tune the values of $exec\_blocks$ and $exec\_edges$, and found values around $1000$ to give satisfactory results. This method thus only works on Python programs that contain at least a few thousand bytecode instructions.
+We then apply a simple transformation on $\mathcal{C}_{filtered}$ to merge all blocks $B$ and $B'$ such that $next(B) = \{B'\}$ and $prev(B') = \{B\}$. In the experiments I had to tune the values of $exec\_blocks$ and $exec\_edges$, and found values around $1000$ to give satisfactory results. This method thus only works on Python programs that contain at least a few thousand bytecode instructions. The number of bytecode instructions for a given program can sometimes be larger than expected: interpreters execute some initialization and finalization bytecode in addition to the main program. In the case of PyPy the number of additional bytecode instructions is large enough that even trivial Python programs can be successfully analyzed, however in the case of CPython we will not be able to detect the VM loop in very small Python programs.
 
 The CFG $\mathcal{C}_{filtered}$ only retains the main structure of the graph, abstracting away the code paths rarely taken: see Figures \ref{fig:concreteVMFiltered} and \ref{fig:concreteVMOriginal} for a comparison between $\mathcal{C}$ and $\mathcal{C}_{filtered}$. Since $\mathcal{C}_{filtered}$ can miss parts of or most of the opcode execution code, the original CFG $\mathcal{C}$ is a good place to look for the dispatch. However in $\mathcal{C}$, the fetch, decode and dispatch may not be in the same basic block : we look in $\mathcal{C}_{filtered}$ for a block containing all three.
 
@@ -220,15 +230,15 @@ RETURN_VALUE
 Before we can continue the analysis any further, we give ourselves an abstract VM model. While the previous section does not assume much about the VM, this model follows more closely the Python VM.
 \subsection{Definition}
 
-We assume we are working with a stack-based VM, with no general-purpose registers (it does however have `registers' such as $ip$ to store the instruction pointer). Its internal state consists of:
+We assume we are working with a stack-based VM, with no general-purpose registers (it does however have `registers' such as $ip$, the instruction pointer). Its internal state consists of:
 \begin{itemize}
 	\item a set of code blocks 
 	\item a set of value stacks 
 	\item a stack of frames.  
-	\item pointers to the current frame ($fp$: frame pointer), the current bytecode ($ip$: instruction pointer) and the top of the current value stack ($sp$: stack pointer)
+	\item pointers to the current frame ($fp$: frame pointer), the current bytecode instruction ($ip$: instruction pointer) and the top of the current value stack ($sp$: stack pointer)
 \end{itemize}
 
-A code block is a list of instructions. Each instruction is 2 bytes wide, the first byte being the opcode (as an example, CPython uses $23$ for BINARY\_ADD, $1$ for POP\_TOP, $113$ for JUMP\_ABSOLUTE, and so on) and the second byte being an argument. All instructions have an argument byte, even those that don't use it. A code block contains all the code a given Python function can execute.
+A code block is a list of bytecode instructions. Each instruction is 2 bytes wide, the first byte being the opcode (as an example, CPython uses $23$ for BINARY\_ADD, $1$ for POP\_TOP, $113$ for JUMP\_ABSOLUTE, and so on) and the second byte being an argument. All instructions have an argument byte, even those that don't use it. A code block contains all the code a given Python function can execute.
 
 A value stack is a stack of Python values (objects). The contents of the stack are opaque to us. However all the values in the stack are contiguous in memory and of the same size.
 
@@ -395,6 +405,14 @@ An exemple of the semantics we are able to compute is given in Figure \ref{fig:s
 	\bibitem{tritondeobfs} 
 	Jonathan Salwan, Sébastien Bardin and Marie-Laure Potet (2017).
 	\\\textit{Désobfuscation binaire: Reconstruction de fonctions virtualisées}
+	
+	\bibitem{surreptsoft}
+	Christian Collberg and Jasvir Nagra.
+	\\\textit{Surreptitious Software: Obfuscation, Watermarking, and Tamperproofing for Software Protection}
+	
+	\bibitem{vmprotect}
+	VMProtect:
+	\href{http://vmpsoft.com/support/user-manual}{\texttt{http://vmpsoft.com/support/user-manual}}
 	
 	\bibitem{cpython}
 	CPython: the official Python interpreter.
