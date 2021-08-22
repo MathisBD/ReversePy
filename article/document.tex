@@ -46,15 +46,17 @@
 \section{Introduction}
 This report accounts for the work done under the supervision of Alexandre Talon and Guillaume Bonfante, during June and July of 2021 in the LORIA laboratory (Nancy). Over the course of these two months, I studied the problem of recognizing and describing virtual machines (VMs) from their execution traces.
 
-The context of this study relies on the following issue.We suppose that we are given an executable for which we mustdetermine whether it is a malware or not. The problem is thatmalware authors try to hide their malware by transforming the code, to make it harder to understand and analyze. Evenif we have the original version of the malware, it is hard (and in general undecidable by Rice's Theorem) to recognize its obfuscated variants.
+The context of this study relies on the following issue. We suppose that we are given an executable for which we must determine whether it is a malware or not. The problem is that malware authors try to hide their malware by transforming the code, to make it harder to understand and analyze. Even if we have the original version of the malware, it is hard (and in general undecidable by Rice's Theorem) to recognize its obfuscated variants.
 
-One of the obfuscation techniques used by malware authors isto compile their binary code with a virtual machine,see \cite{surreptsoft}.
+One of the obfuscation techniques used by malware authors is to compile their binary code with a virtual machine, see \cite{surreptsoft}.
 
-A virtual machine is given by a (usually low level) language (next named bytecode) together with its semantics,usually described by an interpreter for the language. The basis of theobfuscation is then to compile the malware's source code to the bytecode language andto embark both the interpreter and the obfuscated code within the malware executable.
+A virtual machine is given by a (usually low level) language (next named bytecode) together with its semantics, usually described by an interpreter for the language. The basis of the obfuscation is then to compile the malware's source code to the bytecode language and to embark both the interpreter and the obfuscated code within the malware executable. Some packers such as VMProtect (see \cite{vmprotect}) will perform such an operation.
 
-Some packers such as VMProtect (see \cite{vmprotect}) will perform such an operation.
+Deobfuscating the binary executable means we can identify the interpreter,
+the bytecode and that we can reverse the compilation process. Taken in
+general, all these tasks are clearly undecidable.
 
-A VM is an abstract version of a computer system: it is a program that reads a list of instructions (in a format called bytecode) and executes them. Its design is based on that of physical machines. The execution of an instruction consists of the following steps:
+So, we will focus on more restricted forms of VMs. We suppose that a VM is an abstract version of a computer system: it is a program that reads a list of instructions (bytecode) and executes them. Its design is based on the one of physical machines. The execution of an instruction consists of the following steps:
 \begin{enumerate}
 	\item Fetch: reads the instruction from memory.
 	\item Decode: parses the instruction. If the instruction is formatted in a typical way, it is divided into an opcode followed by zero or more arguments (similar to machine code).
@@ -63,24 +65,46 @@ A VM is an abstract version of a computer system: it is a program that reads a l
 \end{enumerate}
 The serial execution of several instructions forms the VM loop (see Figure \ref{fig:abstractVM:Centralized}).
 
-% Context + other papers
 During this internship my goal was, broadly speaking, to reverse engineer a VM: I would observe the execution of a VM and first try to detect that it is a VM, then try to find out what it is doing. Similar work has been done in the context of binary deobfuscation: a popular technique to hide the original source code of a program (\textit{i.e.} obfuscate it) is to translate parts of it into some proprietary bytecode to be interpreted at run-time by a virtual machine. This protection can however be bypassed, as shown by Salwan, Bardin and Potet in \cite{tritondeobfs}. They used the Triton dynamic binary instrumentation framework along with the powerful techniques it enables such as taint analysis and symbolic execution to find the original source code (or an equivalent code) of obfuscated programs. Unlike traditional `by hand' reverse-engineering techniques, which first try to understand the proprietary bytecode before finding the source code, they leveraged Triton to find the source code without having to find much about the VM. 
 
-I studied a specific class of VMs: programming language interpreters. Typical examples include the Python interpreter and the Java Virtual Machine. I focused on two Python interpreters: CPython \cite{cpython} and PyPy \cite{pypy}. My approach was more lightweight than the one of Salwan et al. Without using heavy techniques and only using the fact that the Python interpreter is a VM, my goal was to:
-\begin{enumerate}
-	\item Find the bytecode of the program being run.
-	\item Find some level of semantics about the bytecode.
-\end{enumerate}
+To sum up, the question I will address in this work is to determine if a given executable runs an interpreter and in this case to extract as much information as possible about the interpreted language.
+
+Since our main target is malware, we suppose that we do not have access to the source code of the program, neither to the source code of the interpreted code.
+
+Finally, given the amount of code that must be checked by an antivirus software, I tried too keep a procedure as lightweight as possible.
+
+Our approach will rely on observations of the execution of the
+input binary code.
+
+CPython (or any other python interpreter) is a good starting point for
+such a study. Indeed, first, it will roughly speaking compile the source code
+`just in time' into its corresponding bytecode (that you can find in the *.pyc
+file) and then run the interpreter on the compiled code. Thus, we have to
+work on the two stages: where is the interpreter and how it works? And second, compared to a malware, we can run experiments within a standard environment. Running a malware is always dangerous.
 
 The first step was to analyze the trace of an execution of a Python interpreter to find the VM loop. Then I had to find the main parts of the VM state such as the program bytecode, the instruction pointer ($ip$), the stack pointer ($sp$), and so on. Finally I observed how each Python instruction changes the state of the VM to reconstruct some basic level of semantics about the Python opcodes.
 
-\section{Recognizing the VM execution}
+\section{Interpreter identification}
 
-We will now describe in more details our starting point. We give ourselves a VM to analyze (for instance the CPython interpreter). We assume that we do not have access to the source code or to the machine code of the VM executable. What we do allow ourselves to use is the execution trace of single runs of the VM: the ordered list of machine instructions the VM executable uses to run a given program. Note that this does not give us access to the complete machine code of the VM executable, nor to the bytecode instructions of the program the VM runs. 
+We will now describe in more details our starting point. We consider a VM to analyze (for instance the CPython interpreter). We assume that we do not have access to the source code or to the machine code of the VM executable. What we do allow ourselves to use is the execution trace of single runs of the VM: the ordered list of machine instructions the VM executable uses to run a given program, along with information about the processor state during this execution. Note that this does not give us access to the complete machine code of the VM executable, nor to the bytecode instructions of the program the VM runs. 
 
 I obtained this execution trace using a custom Intel Pin tracer \cite{intelpin}. Writing the Pintool was a non-trivial task: I had to balance several challenges such as memory consumption (we have to store information about every noteworthy machine instruction that is executed, which can quickly add up to gigabytes of data), execution time (running a program instrumented with Pin is several orders of magnitudes slower than normal) and unclear parts of the Pin user guide.
 
-The first step to analyze the VM is thus to recognize it in the execution trace: can we recognize the fetch-decode-dispatch-execute pattern? In what follows we will often write `finding the fetch' to avoid repeating `fetch-decode-dispatch'.
+Using the Pin tracer, we collect information about the state of the processor before each machine instruction in the trace. We collect : 
+\begin{itemize}
+	\item The contents of all general purpose registers (\texttt{\%rax}, \texttt{\%rbx}, and so on).
+	\item The opcodes of the current machine instruction.
+	\item Each time a value is read from memory : the address that is read from, the number of bytes that are read and the value that is read. We do the same for writes.
+\end{itemize}
+
+The first step to analyze the VM is thus to recognize it in the execution trace: can we recognize the fetch-decode-dispatch-execute pattern? We would like to separate the trace in contiguous blocks of instructions that each correspond to the execution of a single opcode, as illustrated in Figure \ref{fig:trace}.
+
+\begin{figure}[htp]
+	\centering 
+	\includegraphics[width=.4\linewidth]{img/Trace.png}
+	\caption{The structure of the execution trace of a Python interpreter. The interpreter first compiles the Python source code to a bytecode format. It then does the actual interpretation, which can be split in parts for each opcode.}
+	\label{fig:trace}
+\end{figure}
 
 \subsection{Building the CFG}
 
@@ -225,7 +249,7 @@ RETURN_VALUE
 	\label{fig:concreteVMOriginal}
 \end{figure}
 
-\section{Abstract VM model}
+\section{Bytecode language description}
 
 Before we can continue the analysis any further, we give ourselves an abstract VM model. While the previous section does not assume much about the VM, this model follows more closely the Python VM.
 \subsection{Definition}
@@ -238,15 +262,15 @@ We assume we are working with a stack-based VM, with no general-purpose register
 	\item pointers to the current frame ($fp$: frame pointer), the current bytecode instruction ($ip$: instruction pointer) and the top of the current value stack ($sp$: stack pointer)
 \end{itemize}
 
-A code block is a list of bytecode instructions. Each instruction is 2 bytes wide, the first byte being the opcode (as an example, CPython uses $23$ for BINARY\_ADD, $1$ for POP\_TOP, $113$ for JUMP\_ABSOLUTE, and so on) and the second byte being an argument. All instructions have an argument byte, even those that don't use it. A code block contains all the code a given Python function can execute.
+A code block is a list of bytecode instructions. We suppose that code blocks are implemented as contiguous segments in processor memory. Each instruction is 2 bytes wide, the first byte being the opcode (as an example, CPython uses $23$ for BINARY\_ADD, $1$ for POP\_TOP, $113$ for JUMP\_ABSOLUTE, and so on) and the second byte being an argument. All instructions have an argument byte, even those that don't use it. A code block contains all the code a given Python function can execute.
 
-A value stack is a stack of Python values (objects). The contents of the stack are opaque to us. However all the values in the stack are contiguous in memory and of the same size.
+A value stack is a stack of Python values (objects). We suppose that stacks are implemented as contiguous segments in memory with a `stack-like' management, and that each value is the same size. The contents of a stack are opaque to us : most interpreters use it to store pointers to the actual objects.
 
 Each frame corresponds to the execution of some Python function. A frame has its own code block and value stack.
 
-The term `pointer' is intentionally vague: a pointer could be stored in a physical register (\texttt{\%rax}, \texttt{\%rbx}, and so on) or in a memory cell, it may contain the address of the object it points to or be an index into a list. In the experiments I ran, I had to make additional assumptions about pointers, as will be explained in the following section.
+Pointers can be stored in a physical register (\texttt{\%rax}, \texttt{\%rbx}, and so on) or in a memory cell. They may contain the address of the object they point to or be an index into a list. In the experiments I ran, I had to make additional assumptions about pointers, as will be explained in the following section.
 
-We will write $ptr \leftarrow f(ptr)$ where $f$ is any function and $ptr$ is $ip$, $sp$ or $fp$ to indicate that a given opcode changes the value of $ptr$ to $f(ptr)$.
+We will write $ip \leftarrow f(ip)$ where $f$ is any function to indicate that a given opcode changes the value of $ip$ to $f(ip)$ (and similarly for $sp$).
 
 \subsection{Finding the VM state}
 

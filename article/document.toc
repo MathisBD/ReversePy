@@ -1,17 +1,17 @@
 \babel@toc {english}{}\relax 
 \contentsline {section}{\numberline {1}Introduction}{3}{section.1}%
-\contentsline {section}{\numberline {2}Recognizing the VM execution}{4}{section.2}%
+\contentsline {section}{\numberline {2}Interpreter identification}{4}{section.2}%
 \contentsline {subsection}{\numberline {2.1}Building the CFG}{4}{subsection.2.1}%
 \contentsline {subsection}{\numberline {2.2}Finding the fetch}{5}{subsection.2.2}%
 \contentsline {subsubsection}{\numberline {2.2.1}Basic Method}{5}{subsubsection.2.2.1}%
-\contentsline {subsubsection}{\numberline {2.2.2}Using the filtered CFG}{5}{subsubsection.2.2.2}%
-\contentsline {section}{\numberline {3}Abstract VM model}{7}{section.3}%
-\contentsline {subsection}{\numberline {3.1}Definition}{7}{subsection.3.1}%
-\contentsline {subsection}{\numberline {3.2}Finding the VM state}{10}{subsection.3.2}%
-\contentsline {subsubsection}{\numberline {3.2.1}Finding $ip$}{10}{subsubsection.3.2.1}%
-\contentsline {subsubsection}{\numberline {3.2.2}Finding $fp$}{10}{subsubsection.3.2.2}%
-\contentsline {subsubsection}{\numberline {3.2.3}Finding $sp$}{11}{subsubsection.3.2.3}%
-\contentsline {subsubsection}{\numberline {3.2.4}Code blocks}{11}{subsubsection.3.2.4}%
-\contentsline {section}{\numberline {4}Opcode semantics}{11}{section.4}%
-\contentsline {subsection}{\numberline {4.1}Examples}{11}{subsection.4.1}%
-\contentsline {subsection}{\numberline {4.2}Definition}{12}{subsection.4.2}%
+\contentsline {subsubsection}{\numberline {2.2.2}Using the filtered CFG}{6}{subsubsection.2.2.2}%
+\contentsline {section}{\numberline {3}Bytecode language description}{11}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Definition}{11}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Finding the VM state}{11}{subsection.3.2}%
+\contentsline {subsubsection}{\numberline {3.2.1}Finding $ip$}{11}{subsubsection.3.2.1}%
+\contentsline {subsubsection}{\numberline {3.2.2}Finding $fp$}{12}{subsubsection.3.2.2}%
+\contentsline {subsubsection}{\numberline {3.2.3}Finding $sp$}{12}{subsubsection.3.2.3}%
+\contentsline {subsubsection}{\numberline {3.2.4}Code blocks}{12}{subsubsection.3.2.4}%
+\contentsline {section}{\numberline {4}Opcode semantics}{13}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Examples}{13}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Definition}{14}{subsection.4.2}%

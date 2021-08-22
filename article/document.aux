@@ -22,50 +22,50 @@
 \citation{surreptsoft}
 \citation{vmprotect}
 \citation{tritondeobfs}
-\citation{cpython}
-\citation{pypy}
 \@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{3}{section.1}\protected@file@percent }
 \citation{intelpin}
-\@writefile{toc}{\contentsline {section}{\numberline {2}Recognizing the VM execution}{4}{section.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2}Interpreter identification}{4}{section.2}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {2.1}Building the CFG}{4}{subsection.2.1}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Transformation of the CFG around call/ret. The full arrows represent edges in the CFG. The dashed arrow indicates that there may be other blocks between the two green blocks. These other blocks are not modified.\relax }}{5}{figure.caption.4}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces The structure of the execution trace of a Python interpreter. The interpreter first compiles the Python source code to a bytecode format. It then does the actual interpretation, which can be split in parts for each opcode.\relax }}{5}{figure.caption.4}\protected@file@percent }
 \providecommand*\caption@xref[2]{\@setref\relax\@undefined{#1}}
-\newlabel{fig:callRet}{{1}{5}{Transformation of the CFG around call/ret. The full arrows represent edges in the CFG. The dashed arrow indicates that there may be other blocks between the two green blocks. These other blocks are not modified.\relax }{figure.caption.4}{}}
+\newlabel{fig:trace}{{1}{5}{The structure of the execution trace of a Python interpreter. The interpreter first compiles the Python source code to a bytecode format. It then does the actual interpretation, which can be split in parts for each opcode.\relax }{figure.caption.4}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {2.2}Finding the fetch}{5}{subsection.2.2}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsubsection}{\numberline {2.2.1}Basic Method}{5}{subsubsection.2.2.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {2.2.2}Using the filtered CFG}{5}{subsubsection.2.2.2}\protected@file@percent }
-\newlabel{fig:abstractVM:Centralized}{{2a}{6}{Centralized fetch\relax }{figure.caption.5}{}}
-\newlabel{sub@fig:abstractVM:Centralized}{{a}{6}{Centralized fetch\relax }{figure.caption.5}{}}
-\newlabel{fig:abstractVM:Decentralized}{{2b}{6}{Decentralized fetch (`computed-gotos')\relax }{figure.caption.5}{}}
-\newlabel{sub@fig:abstractVM:Decentralized}{{b}{6}{Decentralized fetch (`computed-gotos')\relax }{figure.caption.5}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Examples of VM control flow graphs\relax }}{6}{figure.caption.5}\protected@file@percent }
-\newlabel{fig:abstractVM}{{2}{6}{Examples of VM control flow graphs\relax }{figure.caption.5}{}}
-\newlabel{fig:examplePythonProg:source}{{3a}{7}{Python source code.\relax }{figure.caption.6}{}}
-\newlabel{sub@fig:examplePythonProg:source}{{a}{7}{Python source code.\relax }{figure.caption.6}{}}
-\newlabel{fig:examplePythonProg:bytecode}{{3b}{7}{Disassembled bytecode.\relax }{figure.caption.6}{}}
-\newlabel{sub@fig:examplePythonProg:bytecode}{{b}{7}{Disassembled bytecode.\relax }{figure.caption.6}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces An toy python program, used to generate the graphs in Figures \ref  {fig:concreteVMFiltered} and \ref  {fig:concreteVMOriginal}, along with its disassembly as given by Python's `dis' module.\relax }}{7}{figure.caption.6}\protected@file@percent }
-\newlabel{fig:examplePythonProg}{{3}{7}{An toy python program, used to generate the graphs in Figures \ref {fig:concreteVMFiltered} and \ref {fig:concreteVMOriginal}, along with its disassembly as given by Python's `dis' module.\relax }{figure.caption.6}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {3}Abstract VM model}{7}{section.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Definition}{7}{subsection.3.1}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces The function implementing the VM loop in $\mathcal  {C}_{filtered}$, constructed from a trace of CPython running the program in Figure \ref  {fig:examplePythonProg}. Notice how the fetch `\texttt  {movzxw (\%r12), \%edx}' and the dispatch `\texttt  {jmp \%rax}' are in the same block (the topmost block), and that this block has relatively few outgoing edges.\relax }}{8}{figure.caption.7}\protected@file@percent }
-\newlabel{fig:concreteVMFiltered}{{4}{8}{The function implementing the VM loop in $\mathcal {C}_{filtered}$, constructed from a trace of CPython running the program in Figure \ref {fig:examplePythonProg}. Notice how the fetch `\texttt {movzxw (\%r12), \%edx}' and the dispatch `\texttt {jmp \%rax}' are in the same block (the topmost block), and that this block has relatively few outgoing edges.\relax }{figure.caption.7}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces The function implementing the VM loop in $\mathcal  {C}$, constructed from the same trace as in Figure \ref  {fig:concreteVMFiltered}. Only the blocks implementing the fetch and the dispatch have their code shown. Notice how the fetch and the dispatch are in different blocks, and that the dispatch has many outgoing edges.\relax }}{9}{figure.caption.8}\protected@file@percent }
-\newlabel{fig:concreteVMOriginal}{{5}{9}{The function implementing the VM loop in $\mathcal {C}$, constructed from the same trace as in Figure \ref {fig:concreteVMFiltered}. Only the blocks implementing the fetch and the dispatch have their code shown. Notice how the fetch and the dispatch are in different blocks, and that the dispatch has many outgoing edges.\relax }{figure.caption.8}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Finding the VM state}{10}{subsection.3.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.1}Finding $ip$}{10}{subsubsection.3.2.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.2}Finding $fp$}{10}{subsubsection.3.2.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.3}Finding $sp$}{11}{subsubsection.3.2.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.4}Code blocks}{11}{subsubsection.3.2.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {4}Opcode semantics}{11}{section.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Examples}{11}{subsection.4.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Definition}{12}{subsection.4.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Transformation of the CFG around call/ret. The full arrows represent edges in the CFG. The dashed arrow indicates that there may be other blocks between the two green blocks. These other blocks are not modified.\relax }}{6}{figure.caption.5}\protected@file@percent }
+\newlabel{fig:callRet}{{2}{6}{Transformation of the CFG around call/ret. The full arrows represent edges in the CFG. The dashed arrow indicates that there may be other blocks between the two green blocks. These other blocks are not modified.\relax }{figure.caption.5}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {2.2.2}Using the filtered CFG}{6}{subsubsection.2.2.2}\protected@file@percent }
+\newlabel{fig:abstractVM:Centralized}{{3a}{7}{Centralized fetch\relax }{figure.caption.6}{}}
+\newlabel{sub@fig:abstractVM:Centralized}{{a}{7}{Centralized fetch\relax }{figure.caption.6}{}}
+\newlabel{fig:abstractVM:Decentralized}{{3b}{7}{Decentralized fetch (`computed-gotos')\relax }{figure.caption.6}{}}
+\newlabel{sub@fig:abstractVM:Decentralized}{{b}{7}{Decentralized fetch (`computed-gotos')\relax }{figure.caption.6}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Examples of VM control flow graphs\relax }}{7}{figure.caption.6}\protected@file@percent }
+\newlabel{fig:abstractVM}{{3}{7}{Examples of VM control flow graphs\relax }{figure.caption.6}{}}
+\newlabel{fig:examplePythonProg:source}{{4a}{8}{Python source code.\relax }{figure.caption.7}{}}
+\newlabel{sub@fig:examplePythonProg:source}{{a}{8}{Python source code.\relax }{figure.caption.7}{}}
+\newlabel{fig:examplePythonProg:bytecode}{{4b}{8}{Disassembled bytecode.\relax }{figure.caption.7}{}}
+\newlabel{sub@fig:examplePythonProg:bytecode}{{b}{8}{Disassembled bytecode.\relax }{figure.caption.7}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces An toy python program, used to generate the graphs in Figures \ref  {fig:concreteVMFiltered} and \ref  {fig:concreteVMOriginal}, along with its disassembly as given by Python's `dis' module.\relax }}{8}{figure.caption.7}\protected@file@percent }
+\newlabel{fig:examplePythonProg}{{4}{8}{An toy python program, used to generate the graphs in Figures \ref {fig:concreteVMFiltered} and \ref {fig:concreteVMOriginal}, along with its disassembly as given by Python's `dis' module.\relax }{figure.caption.7}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces The function implementing the VM loop in $\mathcal  {C}_{filtered}$, constructed from a trace of CPython running the program in Figure \ref  {fig:examplePythonProg}. Notice how the fetch `\texttt  {movzxw (\%r12), \%edx}' and the dispatch `\texttt  {jmp \%rax}' are in the same block (the topmost block), and that this block has relatively few outgoing edges.\relax }}{9}{figure.caption.8}\protected@file@percent }
+\newlabel{fig:concreteVMFiltered}{{5}{9}{The function implementing the VM loop in $\mathcal {C}_{filtered}$, constructed from a trace of CPython running the program in Figure \ref {fig:examplePythonProg}. Notice how the fetch `\texttt {movzxw (\%r12), \%edx}' and the dispatch `\texttt {jmp \%rax}' are in the same block (the topmost block), and that this block has relatively few outgoing edges.\relax }{figure.caption.8}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces The function implementing the VM loop in $\mathcal  {C}$, constructed from the same trace as in Figure \ref  {fig:concreteVMFiltered}. Only the blocks implementing the fetch and the dispatch have their code shown. Notice how the fetch and the dispatch are in different blocks, and that the dispatch has many outgoing edges.\relax }}{10}{figure.caption.9}\protected@file@percent }
+\newlabel{fig:concreteVMOriginal}{{6}{10}{The function implementing the VM loop in $\mathcal {C}$, constructed from the same trace as in Figure \ref {fig:concreteVMFiltered}. Only the blocks implementing the fetch and the dispatch have their code shown. Notice how the fetch and the dispatch are in different blocks, and that the dispatch has many outgoing edges.\relax }{figure.caption.9}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {3}Bytecode language description}{11}{section.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Definition}{11}{subsection.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Finding the VM state}{11}{subsection.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.1}Finding $ip$}{11}{subsubsection.3.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.2}Finding $fp$}{12}{subsubsection.3.2.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.3}Finding $sp$}{12}{subsubsection.3.2.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.4}Code blocks}{12}{subsubsection.3.2.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4}Opcode semantics}{13}{section.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Examples}{13}{subsection.4.1}\protected@file@percent }
 \bibcite{tritondeobfs}{1}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Definition}{14}{subsection.4.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {7}{\ignorespaces The list of opcode characterizations obtained with CPython for the program in Figure \ref  {fig:examplePythonProg}.\relax }}{15}{figure.caption.10}\protected@file@percent }
+\newlabel{fig:semanticsTable}{{7}{15}{The list of opcode characterizations obtained with CPython for the program in Figure \ref {fig:examplePythonProg}.\relax }{figure.caption.10}{}}
 \bibcite{surreptsoft}{2}
 \bibcite{vmprotect}{3}
 \bibcite{cpython}{4}
-\@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces The list of opcode characterizations obtained with CPython for the program in Figure \ref  {fig:examplePythonProg}.\relax }}{14}{figure.caption.9}\protected@file@percent }
-\newlabel{fig:semanticsTable}{{6}{14}{The list of opcode characterizations obtained with CPython for the program in Figure \ref {fig:examplePythonProg}.\relax }{figure.caption.9}{}}
 \bibcite{pypy}{5}
 \bibcite{intelpin}{6}
-\gdef \@abspage@last{15}
+\gdef \@abspage@last{16}
