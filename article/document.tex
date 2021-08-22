@@ -23,9 +23,11 @@
 
 \begin{document}
 	
-\title{Shallow description of the Python Virtual Machine \\ \large L3 summer internship}
-\author{Mathis Bouverot-Dupuis}
-\date{June \& July 2021}
+\title{{\huge \bf Shallow description of the Python Virtual Machine} \large  \\ 
+	\medskip 
+	L3 summer internship}
+\author{\bf \Large Mathis Bouverot-Dupuis}
+\date{June-July 2021}
 
 \maketitle 
 
@@ -41,7 +43,6 @@
 \newpage 
 
 \tableofcontents
-\newpage
 
 \section{Introduction}
 This report accounts for the work done under the supervision of Alexandre Talon and Guillaume Bonfante, during June and July of 2021 in the LORIA laboratory (Nancy). Over the course of these two months, I studied the problem of recognizing and describing virtual machines (VMs) from their execution traces.
@@ -93,7 +94,7 @@ I obtained this execution trace using a custom Intel Pin tracer \cite{intelpin}.
 Using the Pin tracer, we collect information about the state of the processor before each machine instruction in the trace. We collect : 
 \begin{itemize}
 	\item The contents of all general purpose registers (\texttt{\%rax}, \texttt{\%rbx}, and so on).
-	\item The opcodes of the current machine instruction.
+	\item The opcodes of the current machine instruction, as well as the address of this instruction in memory.
 	\item Each time a value is read from memory : the address that is read from, the number of bytes that are read and the value that is read. We do the same for writes.
 \end{itemize}
 
@@ -101,14 +102,14 @@ The first step to analyze the VM is thus to recognize it in the execution trace:
 
 \begin{figure}[htp]
 	\centering 
-	\includegraphics[width=.4\linewidth]{img/Trace.png}
-	\caption{The structure of the execution trace of a Python interpreter. The interpreter first compiles the Python source code to a bytecode format. It then does the actual interpretation, which can be split in parts for each opcode.}
+	\includegraphics[width=.3\linewidth]{img/Trace.png}
+	\caption{The structure of the execution trace of a Python interpreter. The interpreter first compiles the Python source code to a bytecode format. It then does the actual interpretation, which can be split into parts for each bytecode instruction.}
 	\label{fig:trace}
 \end{figure}
 
 \subsection{Building the CFG}
 
-We start by building the control flow graph (CFG) from the VM trace. We group instructions by basic blocks: a sequence of instructions that has only one entry point and one exit point, and build a graph whose vertices are basic blocks and whose edges indicate branches taken during the execution.
+We start by building the control flow graph (CFG) of the VM trace. We group instructions by basic blocks: a sequence of instructions that has only one entry point and one exit point, and build a graph whose vertices are basic blocks and whose edges indicate branches taken during the execution. This representation allows us to analyze more easily the information contained in the execution trace. It enables us for instance to recognize control-flow patterns such as branches (`if-else' statements), loops (`while', `for'), separate different functions, detect which instructions are executed more than others, and so on.
 
 More precisely: for a machine instruction $I$, we call $next(I)$ (resp. $prev(I)$) the set of instructions that, at some point of the execution, immediately follow (resp. precede) $I$ in the execution trace. A basic block is then an ordered list of instructions $I_1 \dots I_n$ such that $\forall k, next(I_k) = \{I_{k+1}\} \textrm{ and } prev(I_{k+1}) = \{I_k\}$. Note that two consecutive instructions in a basic block do not have to be consecutive in memory (example: an unconditional branch). 
 
@@ -120,12 +121,12 @@ As a consequence of this transformation, the CFG is split into several connected
 
 \begin{figure}[htp]
 	\centering
-	\begin{subfigure}{.5\textwidth}
+	\begin{subfigure}{.4\textwidth}
 		\centering 	
 		\includegraphics[width=.4\linewidth]{img/CallRetBefore.png}
 		\caption{Original CFG}
 	\end{subfigure}%
-	\begin{subfigure}{.5\textwidth}
+	\begin{subfigure}{.4\textwidth}
 		\centering 	
 		\includegraphics[width=.4\linewidth]{img/CallRetAfter.png}
 		\caption{Transformed CFG}
@@ -144,19 +145,19 @@ Note that this is a somewhat restrictive assumption, albeit necessary for this m
 
 \begin{figure}[htp]
 	\centering
-	\begin{subfigure}{.5\textwidth}
+	\begin{subfigure}{.4\textwidth}
 		\centering 	
 		\includegraphics[width=.7\linewidth]{img/FetchCentralized.png}
 		\caption{Centralized fetch}
 		\label{fig:abstractVM:Centralized}
 	\end{subfigure}%
-	\begin{subfigure}{.5\textwidth}
+	\begin{subfigure}{.4\textwidth}
 		\centering 	
 		\includegraphics[width=.7\linewidth]{img/FetchDecentralized.png}
 		\caption{Decentralized fetch (`computed-gotos')}
 		\label{fig:abstractVM:Decentralized}
 	\end{subfigure}
-	\caption{Examples of VM control flow graphs}
+	\caption{Examples of VM control flow graphs.}
 	\label{fig:abstractVM}
 \end{figure}
 
@@ -231,7 +232,7 @@ RETURN_VALUE
 		\caption{Disassembled bytecode.}
 		\label{fig:examplePythonProg:bytecode}
 	\end{subfigure}
-	\caption{An toy python program, used to generate the graphs in Figures 	\ref{fig:concreteVMFiltered} and \ref{fig:concreteVMOriginal}, along with its disassembly as given by Python's `dis' module.}
+	\caption{A toy python program, used to generate the graphs in Figures \ref{fig:concreteVMFiltered} and \ref{fig:concreteVMOriginal}, along with its disassembly as given by Python's `dis' module.}
 	\label{fig:examplePythonProg}
 \end{figure}
 
@@ -251,10 +252,11 @@ RETURN_VALUE
 
 \section{Bytecode language description}
 
-Before we can continue the analysis any further, we give ourselves an abstract VM model. While the previous section does not assume much about the VM, this model follows more closely the Python VM.
-\subsection{Definition}
+Before we can continue the analysis any further, we describe in more details an abstract VM model. While the previous section does not assume much about the VM, this model follows more closely the Python VM.
 
-We assume we are working with a stack-based VM, with no general-purpose registers (it does however have `registers' such as $ip$, the instruction pointer). Its internal state consists of:
+\subsection{VM model}
+
+We assume we are working with a stack-based VM, with no general-purpose registers. It does however have `registers' such as $ip$, the instruction pointer or $sp$, the stack pointer, which we will call `pointers' in what follows. Its internal state consists of:
 \begin{itemize}
 	\item a set of code blocks 
 	\item a set of value stacks 
@@ -274,7 +276,9 @@ We will write $ip \leftarrow f(ip)$ where $f$ is any function to indicate that a
 
 \subsection{Finding the VM state}
 
-We assume that the state of the VM is valid at the fetch/dispatch block. At other points in the execution trace, the registers and memory cells used to store the VM state may be used for different purposes. Our goal is then to find as much information as we can about the VM state before each bytecode instruction is fetched.
+An issue to lookout for when finding the VM state is that when executing a bytecode instruction, the registers and memory cells used to store the VM state may be used for different purposes. For instance the VM may store the current Python opcode in \texttt{\%rax}: this means that \texttt{\%rax} holds the opcode between the fetch and the dispatch, but may contain other values during the actual execution of the bytecode instruction (between the dispatch and the next fetch).
+
+I thus assumed that the VM state is valid right before the fetch. This is the only point in the execution trace where I look at the values held by processor registers and memory.
 
 \subsubsection{Finding $ip$}
 
@@ -282,30 +286,36 @@ Our method to find the fetch (using the CFG) gives us the machine instruction(s)
 
 \subsubsection{Finding $fp$}
 
-% todo : explain more about the C stack
-To find the frame pointers, we must make another assumption: that the C stack of the interpreter corresponds to the stack of the Python program it is running (remember we only look at the program state between bytecodes). Changes in \texttt{\%rsp} should then give us the points at which the frame changes. Looking at registers that also change exactly at the same time as \texttt{\%rsp} (and are also aligned on 8 bits) gives us additional frame pointers: pointers to some frame data (for instance, a C struct on the heap).
+To find the frame pointers, we must make another assumption: that the stack of the interpreter (the stack that the processor register \texttt{\%rsp} points to) corresponds to the stack of the Python program it is running. This means that when the Python programs changes frame (with a RET bytecode instruction for instance), the interpreter stack frame will also change, and vice versa. Changes in the value contained by \texttt{\%rsp} (remember we only look at register values before the fetch) should then give us the points at which the interpreter frame changes, and thus the points at which the Python frame changes. 
 
-Knowing the values of the frame pointers, we then tried to recognize the stack structure of frames, but some opcodes seem to operate on the frame stack in non-standard ways, \textit{i.e.} other than pushing or poping one or several frames. This was a limitation that prevented us from working much with opcodes that deal with frames, such as CALLs and RETs, as will be explained later on.
+Looking at registers that also change exactly at the same time as \texttt{\%rsp}, and that contain a value that is aligned on 8 bits, gives us additional frame pointers. These are pointers to some frame data, for instance a C struct on the heap.
+
+Knowing the values of the frame pointers, we then tried to recognize the stack structure of frames, but some opcodes seem to operate on the Python frame stack in non-standard ways, \textit{i.e.} other than pushing or poping one or several frames. This was a limitation that prevented us from working much with opcodes that deal with frames, such as CALLs and RETs, as will be explained later on.
 
 \subsubsection{Finding $sp$}
 
-A first challenge is where to look for $sp$: registers or memory? It turns out it can be in both, depending on the interpreter: in a register for CPython, in memory for PyPy. Looking for $sp$ in registers is straightforward, as there are a very limited number of them. However memory is more complex: we can not scan through each memory cell. What we can hope for is that $sp$ is stored in a C struct pointed to by a frame pointer: $sp$ must be used very often, so requiring more than one pointer indirection to access it seems very inefficient. We thus look for $sp$ near addresses pointed to by frame pointers.  More precisely, we assume $sp$ will always be stored at $[fp + cte]$ where $fp$ is a frame pointer (whose value can change during the program execution) and $cte$ is a small constant offset (a multiple of 8 bits).
+A first challenge is where to look for $sp$: processor registers or memory? It turns out it can be in both, depending on the interpreter: in a register for CPython, in memory for PyPy. 
 
-To detect whether a location (register or memory cell) stores the value of $sp$, we take the list of values this location holds for each opcode. The basic idea is that many opcodes modify $sp$ in the same way: pop or push a few values. But we must be careful: we do not know whether $sp$ is stored as the address of the top stack cell, or as the index of the top stack cell, or something else. Depending on the case, a PUSH might increment $sp$ by $8$, $1$ or something else. The solution is to compute the alignment of $sp$, \textit{i.e.} the largest power of $2$ that divides all the values in the list. We implement this idea as:
+To detect whether a register or memory cell stores $sp$, we take the list of values this location holds before each fetch, and try to decide whether this list of values could be the values of $sp$. The basic idea is that most bytecode instructions pop or push a few values, \textit{i.e.} increment or decrement $sp$ by a small amount.
+
+But we must be careful: we do not know whether $sp$ is stored as the address of the top stack cell, or as the index of the top stack cell, or something else. Depending on the case, a PUSH might increment $sp$ by $8$, $1$ or something else. The solution is to compute the alignment of $sp$ (we call $A$ this value), \textit{i.e.} the largest power of $2$ that divides all the values in the list. $sp$ should then often vary by a small amount, and this amount should be a multiple of $A$. We implement this idea as:
 \begin{itemize}
-	\item Compute the maximum consecutive number of times that $sp \leftarrow sp + k*align$ where $k$ is a small constant (e.g. $-2 \leq k \leq 2$). This number should not change much with the size of the program (we check consecutive occurences): we require it to be larger than a constant (e.g. $10$).
-	\item Compute the maximum (not necessarily consecutive) number of times that $sp \leftarrow sp - align$, \textit{i.e.} the number of POPs. This number should be proportional to the size of the program: we check it is larger than a percentage of the total opcode count (e.g. $10\%$).
+	\item Compute the maximum consecutive number of times that $sp \leftarrow sp + k*A$ where $k$ is a small constant (e.g. $-2 \leq k \leq 2$). This number should not change much with the size of the program (we check consecutive occurences): we require it to be larger than a constant (\textit{e.g.} $10$).
+	\item Compute the maximum (not necessarily consecutive) number of times that $sp \leftarrow sp - A$, \textit{i.e.} the number of POPs. This number should be proportional to the size of the program: we check it is larger than a percentage of the total opcode count (\textit{e.g.} $10\%$).
 \end{itemize}
-The second test used is to distinguish between $sp$ and $ip$/$fp$: $ip$ and $fp$ might be stored in a similar way as $sp$, and pass the first test. 
+The second test is used because the first test would not be enough to distinguish between $sp$ and $ip$/$fp$: $ip$ and $fp$ might be stored in a similar way as $sp$, and pass the first test. 
+
+Looking for $sp$ in registers is straightforward, as there is a limited number of them. However memory is more complex: we can not consider the list of values taken by each memory cell across the whole execution trace. What we can hope for is that $sp$ is stored in a C-like struct pointed to by a frame pointer: $sp$ must be used very often, so requiring more than one pointer indirection to access it seems very inefficient. We thus look for $sp$ near addresses pointed to by frame pointers.  More precisely, we assume $sp$ will always be stored at $[fp + cte]$ where $fp$ is a frame pointer (whose value can vary across the execution trace) and $cte$ is a small constant offset (a multiple of 8 bits).
 
 \subsubsection{Code blocks}
 
-We compute the code blocks by partitioning the bytecode instructions according to (the transitive closure of) the following relation. Two bytecode instructions are in the same code block if:
+Most Python bytecode instructions that change the value of $ip$ have to keep $ip$ in the same code block. For instance, an absolute jump JUMP\_ABSOLUTE with an argument $i$ will set $ip$ to the $i$-th instruction in the code block. Notable bytecode instructions that can change the code block include CALL-like instructions and RET.
+
+We compute the code blocks by partitioning the bytecode instructions according to the following relation. Two bytecode instructions are in the same code block if:
 \begin{itemize}
 	\item They are executed in the same frame (\textit{i.e.} there is no frame change between two of their executions). This is because all instructions executed inside a frame are in the same Python function.
-	\item They are close in memory. This is because different code blocks are likely to be far apart in memory. % todo: why?
+	\item They are close in memory. Here we assume different code blocks are likely to be far apart in memory.
 \end{itemize}
-
 
 \section{Opcode semantics}
 
@@ -422,7 +432,6 @@ An exemple of the semantics we are able to compute is given in Figure \ref{fig:s
 	\caption{The list of opcode characterizations obtained with CPython for the program in Figure \ref{fig:examplePythonProg}.}
 	\label{fig:semanticsTable}
 \end{figure}
-
 
 
 \begin{thebibliography}{9}
